@@ -18,6 +18,8 @@ our $sortkey = 300;
 sub get_param_list {
   my $class      = shift;
   my @param_list = (
+    {name => 'allow_account_creation', type => 'b', default => '1',},
+
     {name => 'auth_env_id', type => 't', default => '',},
 
     {name => 'auth_env_email', type => 't', default => '',},
@@ -77,13 +79,6 @@ sub get_param_list {
     {name => 'emailsuffix', type => 't', default => ''},
 
     {
-      name    => 'createemailregexp',
-      type    => 't',
-      default => q:.*:,
-      checker => \&check_regexp
-    },
-
-    {
       name    => 'password_complexity',
       type    => 's',
       choices => ['no_constraints', 'bmo'],
@@ -93,10 +88,23 @@ sub get_param_list {
 
     {name => 'password_check_on_login', type => 'b', default => '1'},
 
-    {name => 'duo_host', type => 't', default => '',},
-    {name => 'duo_akey', type => 't', default => '',},
-    {name => 'duo_ikey', type => 't', default => '',},
-    {name => 'duo_skey', type => 't', default => '',},
+    {name => 'duo_uri',          type => 't', default => '',},
+    {name => 'duo_client_id',     type => 't', default => '',},
+    {name => 'duo_client_secret', type => 't', default => '',},
+    {
+      name    => 'duo_required_group',
+      type    => 's',
+      default => '',
+      choices => \&get_all_group_names,
+      checker => \&check_group,
+    },
+    {
+      name    => 'duo_required_excluded_group',
+      type    => 's',
+      default => '',
+      choices => \&get_all_group_names,
+      checker => \&check_group,
+    },
 
     {
       name    => 'mfa_group',

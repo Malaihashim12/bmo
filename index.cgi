@@ -50,7 +50,7 @@ if ($cgi->param('logout')) {
 my @etag_parts = (
   Bugzilla->VERSION,
   Bugzilla->params->{announcehtml},
-  Bugzilla->params->{createemailregexp},
+  Bugzilla->params->{allow_account_creation},
 );
 my $weak_etag     = q{W/"} . md5_hex(@etag_parts) . q{"};
 my $if_none_match = $cgi->http('If-None-Match');
@@ -69,8 +69,6 @@ if (
 }
 else {
   my $template = Bugzilla->template;
-  $C->content_security_policy(
-    script_src => ['self', 'https://www.google-analytics.com']);
 
   # Return the appropriate HTTP response headers.
   print $cgi->header(

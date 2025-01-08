@@ -11,7 +11,7 @@ use Bugzilla::Test::Util qw(create_user);
 use Bugzilla::DaemonControl qw(
   run_cereal_and_httpd
   run_cereal_and_jobqueue
-  assert_httpd assert_database assert_selenium
+  assert_httpd assert_database
   on_finish on_exception
 );
 
@@ -100,18 +100,6 @@ sub cmd_jobqueue {
   exit run_cereal_and_jobqueue(@args)->get;
 }
 
-sub cmd_selenium_dev {
-  cmd_load_test_data();
-  check_data_dir();
-  copy_qa_extension();
-  mkdir('/app/artifacts');
-
-  assert_database->get();
-  my $httpd_exit_f = run_cereal_and_httpd('-DACCESS_LOGS');
-  assert_httpd()->get;
-  exit $httpd_exit_f->get;
-}
-
 sub cmd_dev_httpd {
   assert_database->get();
 
@@ -175,10 +163,11 @@ sub cmd_test_selenium {
 sub cmd_test_qa {
   my $test_files = shift;
   $ENV{HTTP_BACKEND} = 'simple';
+  $ENV{MOJO_MODE}    = 'production';
 
   cmd_load_test_data();
   check_data_dir();
-  mkdir('/app/artifacts');
+  mkdir '/app/artifacts' if !-d '/app/artifacts';
 
   assert_database()->get;
   my $httpd_exit_f = run_cereal_and_httpd('-DHTTPD_IN_SUBDIR', '-DACCESS_LOGS');
@@ -199,8 +188,6 @@ sub cmd_prove {
   run('prove', '-I/app', '-I/app/local/lib/perl5', @args);
 }
 
-sub cmd_version { run('cat', '/app/version.json'); }
-
 sub cmd_test_bmo {
   my (@prove_args) = @_;
   $ENV{HTTP_BACKEND} = 'hypnotoad';
@@ -209,12 +196,6 @@ sub cmd_test_bmo {
   check_data_dir();
 
   assert_database()->get;
-  assert_selenium('selenium')->get;
-
-  # OAuth2 testing user
-  $ENV{BZ_TEST_OAUTH2_NORMAL_USER}  = 'oauth2-user@example.com';
-  $ENV{BZ_TEST_OAUTH2_MOZILLA_USER} = 'oauth2-user@mozilla.com';
-  $ENV{BZ_TEST_OAUTH2_PASSWORD}     = 'non-working-password';
 
   $ENV{BZ_TEST_NEWBIE}      = 'newbie@mozilla.example';
   $ENV{BZ_TEST_NEWBIE_PASS} = 'captain.space.bagel.ROBOT!';
@@ -262,11 +243,6 @@ sub run_prove {
       return $prove_exit_f;
       });
   });
-}
-
-sub copy_qa_extension {
-  say 'copying the QA extension...';
-  dircopy('/app/qa/extensions/QA', '/app/extensions/QA');
 }
 
 sub wait_for_db {

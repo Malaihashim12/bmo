@@ -2,17 +2,18 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-version: '3'
-
 services:
   bmo.test:
-    image: bmo
+    build: &build_bmo
+      context: .
+      dockerfile: Dockerfile
+      target: test
     command: dev_httpd
     tmpfs:
       - /tmp
       - /run
     environment:
-      - 'BMO_inbound_proxies=*'
+      - "BMO_inbound_proxies=*"
       - BMO_db_host=bmo.db
       - BMO_db_name=bugs
       - BMO_db_pass=bugs
@@ -26,22 +27,23 @@ services:
       - BZ_ANSWERS_FILE=/app/conf/checksetup_answers.txt
       - BZ_QA_CONF_FILE=/app/qa/config/selenium_test.conf
       - BZ_QA_CONFIG=1
+      - CI=1
       - LOCALCONFIG_ENV=1
       - LOG4PERL_CONFIG_FILE=log4perl-test.conf
       - LOGGING_PORT=5880
       - PORT=8000
-      - TWD_BROWSER=firefox
-      - TWD_HOST=selenium
-      - TWD_PORT=4444
     depends_on:
       - externalapi.test
       - bmo.db
       - memcached
-      - selenium
+      - s3
+      - gcs
 
   externalapi.test:
-    image: bmo
-    entrypoint: perl /app/external_test_api.pl daemon -l http://*:8000
+    build: *build_bmo
+    entrypoint: perl /app/external_test_api.pl daemon -l http://*:8001
+    ports:
+      - 8001:8001
 
   bmo.db:
     image: mysql:8
@@ -58,8 +60,13 @@ services:
   memcached:
     image: ghcr.io/ghcr-library/memcached:latest
 
-  selenium:
-    image: selenium/standalone-firefox:3.141.59
-    shm_size: '512m'
-    ports:
-      - "59000:5900"
+  s3:
+    image: scireum/s3-ninja
+
+  gcs:
+    image: fsouza/fake-gcs-server
+    command: "-scheme http"
+    volumes:
+      - ./docker/gcs/attachments:/data/attachments
+      - ./docker/gcs/sitemapindex:/data/sitemapindex
+      - ./docker/gcs/mining:/data/mining

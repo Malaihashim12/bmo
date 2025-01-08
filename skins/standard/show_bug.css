@@ -129,12 +129,6 @@ table.edit_form hr {
   transition: none !important;
 }
 
-.calendar_button,
-.calendar_button:hover {
-  box-shadow: none;
-  padding: 0;
-}
-
 .related_actions {
   line-height: 19px;
   padding: 5px 10px;
@@ -231,10 +225,6 @@ table#flags {
   text-align: right;
 }
 
-.bz_time_tracking_table #deadline {
-  width: 7em;
-}
-
 #summary tr td {
   vertical-align: top;
 }
@@ -292,10 +282,6 @@ table#flags {
 
 #comment_tags_collapse_expand li {
   margin-bottom: 0;
-}
-
-#bugzilla-etiquette {
-  float: right;
 }
 
 .last_comment_link {

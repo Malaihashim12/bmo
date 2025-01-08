@@ -85,7 +85,8 @@ sub DB_COLUMNS {
     'profiles.mfa',
     'profiles.mfa_required_date',
     'profiles.nickname',
-    'profiles.bounce_count'
+    'profiles.bounce_count',
+    $dbh->sql_date_format('modification_ts', '%Y-%m-%d  %H:%i:%s') . ' AS modification_ts',
     ),
     ;
 }
@@ -107,6 +108,7 @@ use constant VALIDATORS => {
   password_change_reason   => \&_check_password_change_reason,
   mfa                      => \&_check_mfa,
   bounce_count             => \&_check_numeric,
+  modification_ts          => \&_check_timestamp,
 };
 
 sub UPDATE_COLUMNS {
@@ -124,6 +126,7 @@ sub UPDATE_COLUMNS {
     mfa_required_date
     nickname
     bounce_count
+    modification_ts
   );
   push(@cols, 'cryptpassword') if exists $self->{cryptpassword};
   return @cols;
@@ -189,6 +192,11 @@ sub _update_groups {
   my $dbh           = Bugzilla->dbh;
   my $user          = Bugzilla->user;
 
+  # Before any group changes, lets record if the user is
+  # in the duo required status?
+  my $old_duo_required = $self->in_duo_required_group;
+  my $old_duo_excluded = $self->in_duo_excluded_group;
+
   # Update group settings.
   my $sth_add_mapping = $dbh->prepare(
     qq{INSERT INTO user_group_map (
@@ -245,6 +253,23 @@ sub _update_groups {
 
     Bugzilla->memcached->clear_config({key => 'user_groups.' . $self->id});
 
+    # Now that group changes have been made, lets see what the users duo
+    # required status is now. If it has changed, then we will need to logout
+    # the user later.
+    my $new_self = $self->new($self->id);
+    my $new_duo_required = $new_self->in_duo_required_group;
+    if ($old_duo_required && !$new_duo_required) {
+      $self->{_duo_requirement_removed} = 1;
+    }
+    elsif (!$old_duo_required && $new_duo_required) {
+      $self->{_duo_requirement_added} = 1;
+    }
+
+    # Only bot accounts should be added to the excluded group
+    if ($new_self->in_duo_excluded_group && $new_self->login !~ /[.](?:bugs|tld)$/) {
+      ThrowUserError('duo_exclude_only_bots');
+    }
+
     my $type = $is_bless ? 'bless_groups' : 'groups';
     $changes->{$type} = [[map { $_->name } @$removed], [map { $_->name } @$added],];
   }
@@ -278,45 +303,47 @@ sub update {
     $dbh->do("DELETE FROM profile_mfa WHERE user_id = ?", undef, $self->id);
   }
 
-  # IAM usernames are stored separately from normal profiles
-  # data so we update them here instead
-  if (exists $self->{new_iam_username}) {
-    my $new_iam_username = delete $self->{new_iam_username} || '';
-    my $old_iam_username = $self->iam_username || '';
+  # Updated user based on their Duo MFA requirement changes
+  if ($self->{_duo_requirement_added}) {
 
-    $dbh->bz_start_transaction();
+    # When a user is added to the duo required group (during creation or modified)
+    # and they are using TOTP, force a logout by clearing all existing sessions,
+    # unless the user is a member of a "duo-required-excluded" group (ie. "bots").
+    Bugzilla->logout_user($self) if !$self->in_duo_excluded_group;
+  }
+  elsif ($self->{_duo_requirement_removed}) {
 
-    if (!$old_iam_username && $new_iam_username) {
-      $dbh->do('INSERT INTO profiles_iam (user_id, iam_username) VALUES (?, ?)',
-        undef, $self->id, $new_iam_username);
-      $changes->{iam_username} = ['', $new_iam_username];
-    }
-    elsif ($old_iam_username && !$new_iam_username) {
-      $dbh->do('DELETE FROM profiles_iam WHERE user_id = ?', undef, $self->id);
-      $changes->{iam_username} = [$old_iam_username, ''];
-    }
-    elsif ($old_iam_username ne $new_iam_username) {
-      $dbh->do('UPDATE profiles_iam SET iam_username = ? WHERE user_id = ?',
-        undef, $new_iam_username, $self->id);
-      $changes->{iam_username} = [$old_iam_username, $new_iam_username];
-    }
-    if (exists $changes->{iam_username}) {
-      $self->audit_log({iam_username => $changes->{iam_username}})
-        if $self->AUDIT_UPDATES;
-      $self->{iam_username} = defined $new_iam_username ? $new_iam_username : undef;
-    }
+    Bugzilla->logout_user($self);
 
-    $dbh->bz_commit_transaction();
+    # When an account is removed from the duo required group and their current MFA is Duo,
+    # their MFA and saved password should be cleared and they should be forced into
+    # TOTP enrollment upon next login (after performing a password reset).
+    # Clearing their saved password ensures that the account won't be left unprotected by
+    # MFA at any time. This TOTP forcing needs to be immediate, rather than behind a grace period.
+    if ($self->mfa eq 'Duo') {
+      $self->set_mfa('');
+      $self->set_password('*');
+      my ($mfa_required_date)
+        = $dbh->selectrow_array(
+        "SELECT " . $dbh->sql_date_math('NOW()', '-', '1', 'DAY'));
+      $self->set_mfa_required_date($mfa_required_date);
+      $self->SUPER::update();
+    }
   }
 
   # Logout the user if necessary.
   Bugzilla->logout_user($self)
     if (
-    !$options->{keep_session}
-    && ( exists $changes->{login_name}
-      || exists $changes->{disabledtext}
-      || exists $changes->{cryptpassword})
+      !$options->{keep_session}
+      && ( exists $changes->{login_name}
+        || exists $changes->{disabledtext}
+        || exists $changes->{cryptpassword})
     );
+
+  # Update modification_ts if any changes were made
+  if (keys %{$changes}) {
+    $dbh->do('UPDATE profiles set modification_ts = NOW() WHERE userid = ?', undef, $self->id)
+  }
 
   # XXX Can update profiles_activity here as soon as it understands
   #     field names like login_name.
@@ -429,27 +456,8 @@ sub _check_numeric {
   return $value;
 }
 
-sub _check_iam_username {
-  my ($self, $username) = (@_);
-  $username = trim($username);
-
-  if ($username) {
-    validate_email_syntax($username)
-      || ThrowUserError('iam_illegal_username', {username => $username});
-
-    my $iam_username = $self->iam_username || '';
-    if ($username && $username ne $iam_username) {
-      my $existing_username
-        = Bugzilla->dbh->selectrow_array(
-        'SELECT iam_username FROM profiles_iam WHERE iam_username = ?',
-        undef, $username);
-      if ($existing_username) {
-        ThrowUserError('iam_username_exists', {username => $username});
-      }
-    }
-  }
-
-  return $username;
+sub _check_timestamp {
+  return Bugzilla->dbh->selectrow_array('SELECT LOCALTIMESTAMP(0)');
 }
 
 ################################################################################
@@ -459,13 +467,6 @@ sub _check_iam_username {
 sub set_disable_mail  { $_[0]->set('disable_mail', $_[1]); }
 sub set_email_enabled { $_[0]->set('disable_mail', !$_[1]); }
 sub set_extern_id     { $_[0]->set('extern_id',    $_[1]); }
-
-sub set_iam_username {
-  my ($self, $username) = @_;
-  # Validate and store new value for permanent storage later in update()
-  $self->{new_iam_username} = $self->_check_iam_username($username);
-  return $self;
-}
 
 sub set_password_change_required {
   $_[0]->set('password_change_required', $_[1]);
@@ -680,15 +681,27 @@ sub showmybugslink { $_[0]->{showmybugslink}; }
 sub email_disabled { $_[0]->{disable_mail} || !$_[0]->{is_enabled}; }
 sub email_enabled  { !$_[0]->email_disabled; }
 sub last_seen_date { $_[0]->{last_seen_date}; }
+sub modification_ts          { $_[0]->{modification_ts}; }
 sub password_change_required { $_[0]->{password_change_required}; }
 sub password_change_reason   { $_[0]->{password_change_reason}; }
 
-sub iam_username {
+sub reminder_count {
   my $self = shift;
-  return $self->{iam_username} if exists $self->{iam_username};
-  return $self->{iam_username}
+
+  return $self->{reminder_count} if exists $self->{reminder_count};
+
+  # Always return 0 if reminders feature is off or the user is not in
+  # the correct permission group
+  my $params = Bugzilla->params;
+  if (!$params->{reminders_enabled}
+    || ($params->{reminders_group} && !$self->in_group($params->{reminders_group})))
+  {
+    return $self->{reminder_count} = 0;
+  }
+
+  return $self->{reminder_count}
     = Bugzilla->dbh->selectrow_array(
-    'SELECT iam_username FROM profiles_iam WHERE user_id = ?',
+    'SELECT COUNT(*) FROM reminders WHERE user_id = ? AND NOT sent',
     undef, $self->id);
 }
 
@@ -741,13 +754,47 @@ sub mfa_provider {
   return $self->{mfa_provider};
 }
 
-
 sub in_mfa_group {
   my $self = shift;
   return $self->{in_mfa_group} if exists $self->{in_mfa_group};
 
   my $mfa_group = Bugzilla->params->{mfa_group};
   return $self->{in_mfa_group} = ($mfa_group && $self->in_group($mfa_group));
+}
+
+sub in_duo_required_group {
+  my $self = shift;
+  return $self->{in_duo_required_group} if exists $self->{in_duo_required_group};
+
+  my $duo_required_group = Bugzilla->params->{duo_required_group};
+  return ($duo_required_group && $self->in_group($duo_required_group)) ? 1 : 0;
+}
+
+sub in_duo_excluded_group {
+  my $self = shift;
+  return $self->{in_duo_excluded_group} if exists $self->{in_duo_excluded_group};
+
+  my $duo_excluded_group = Bugzilla->params->{duo_required_excluded_group};
+  return ($duo_excluded_group && $self->in_group($duo_excluded_group)) ? 1 : 0;
+}
+
+sub ldap_email {
+  my $self = shift;
+  return $self->{ldap_email} if exists $self->{ldap_email};
+
+  # This only applies to MFA that is based on Duo. If Duo is used,
+  # then the value in profiles_mfa is the users ldap email.
+  if ($self->mfa eq 'Duo') {
+    $self->{ldap_email}
+      = Bugzilla->dbh->selectrow_array(
+      'SELECT value FROM profile_mfa WHERE name = \'user\' AND user_id = ?',
+      undef, $self->id);
+  }
+  else {
+    $self->{ldap_email} = '';
+  }
+
+  return $self->{ldap_email};
 }
 
 sub name_or_login {
@@ -2624,15 +2671,10 @@ sub create {
   $params->{nickname}
     = _generate_nickname($params->{realname}, $params->{login_name}, 0);
 
-  my $iam_username = delete $params->{iam_username};
+  my $modification_ts = $dbh->selectrow_array('SELECT LOCALTIMESTAMP(0)');
+  $params->{modification_ts} = $modification_ts;
 
   my $user = $class->SUPER::create($params);
-
-  # IAM usernames are stored separately from normal profiles
-  # data so we update it here instead
-  if ($iam_username) {
-    $user->set_iam_username($iam_username)->update();
-  }
 
   # Turn on all email for the new user
   require Bugzilla::BugMail;
@@ -2672,8 +2714,8 @@ sub create {
   $dbh->do(
     'INSERT INTO profiles_activity
                           (userid, who, profiles_when, fieldid, newvalue)
-                   VALUES (?, ?, NOW(), ?, NOW())', undef,
-    ($user->id, $who, $creation_date_fieldid)
+                   VALUES (?, ?, ?, ?, ?)', undef,
+    ($user->id, $who, $modification_ts, $creation_date_fieldid, $modification_ts)
   );
 
   $dbh->bz_commit_transaction();
@@ -2828,24 +2870,18 @@ sub is_available_username {
 sub check_account_creation_enabled {
   my $self = shift;
 
+  Bugzilla->params->{allow_account_creation}
+    || ThrowUserError('account_creation_disabled');
+
   # If we're using e.g. LDAP for login, then we can't create a new account.
   $self->authorizer->user_can_create_account
     || ThrowUserError('auth_cant_create_account');
-
-  Bugzilla->params->{'createemailregexp'}
-    || ThrowUserError('account_creation_disabled');
 }
 
 sub check_and_send_account_creation_confirmation {
   my ($self, $login) = @_;
 
   $login = $self->check_login_name_for_creation($login);
-  my $creation_regexp = Bugzilla->params->{'createemailregexp'};
-
-  if ($login !~ /$creation_regexp/i) {
-    ThrowUserError('account_creation_restricted');
-  }
-
   # BMO - add a hook to allow extra validation prior to account creation.
   Bugzilla::Hook::process("user_verify_login", {login => $login});
 

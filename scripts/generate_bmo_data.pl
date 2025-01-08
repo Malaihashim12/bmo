@@ -594,6 +594,7 @@ my %set_params = (
   allowbugdeletion          => 1,
   allowuserdeletion         => 0,
   allow_attachment_deletion => 1,
+  allow_attachment_display  => 1,
   bonsai_url                => 'http://bonsai.mozilla.org',
   collapsed_comment_tags =>
     'obsolete,spam,typo,me-too,advocacy,off-topic,offtopic,abuse,abusive',
@@ -634,6 +635,7 @@ my %set_params = (
   password_complexity            => 'bmo',
   rate_limit_active              => 1,
   rate_limit_rules               => '{"get_attachments":[75,0],"get_comments":[75,0],"get_bug":[200,0],"show_bug":[120,0],"github":[10,0],"webpage_errors":[30,60]}',
+  reminders_enabled              => 1,
   restrict_comments_group        => 'editbugs',
   restrict_comments_enable_group => 'can_restrict_comments',
   search_allow_no_criteria       => 0,

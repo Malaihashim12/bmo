@@ -13,13 +13,15 @@
    title = "$terms.Bugzilla Main Page"
    header = "Main Page"
    style_urls = [ 'skins/standard/index.css' ]
-   no_yui = 1
    og_image = "extensions/OpenGraph/web/moz-social-bw-rgb-1200x1200.png"
+   responsive = 1
 %]
 
 <div id="content">
-  <h1 id="welcome"> Welcome to [% terms.Bugzilla %]</h1>
-  <div>The issue tracker for Firefox and other Mozilla products.</div>
+  <header id="welcome">
+    <h1>Welcome to [% terms.Bugzilla %]</h1>
+    <p>The issue tracker for Firefox and other Mozilla products.</p>
+  </header>
 
   <div class="options">
 
@@ -57,26 +59,30 @@
       </div>
     </div>
 
-    [% IF user.id %]
-      <div class="option">
-        <div class="icon">
-          <a href="/enter_bug.cgi">
-            <!-- Material Symbols: Note Add -->
-            <svg xmlns="http://www.w3.org/2000/svg" height="48" width="48"><path d="M22.5 36.7h3v-6.45H32v-3h-6.5v-6.5h-3v6.5H16v3h6.5Zm-11.05 8.55q-1.95 0-3.325-1.375Q6.75 42.5 6.75 40.55V7.45q0-1.95 1.375-3.35Q9.5 2.7 11.45 2.7H29.6l11.7 11.7v26.15q0 1.95-1.4 3.325-1.4 1.375-3.35 1.375Zm15.65-28.5h9.45l-9.45-9.3Z"/></svg>
-          </a>
+    <div class="option">
+      <div class="icon">
+        <a href="/enter_bug.cgi">
+          <!-- Material Symbols: Note Add -->
+          <svg xmlns="http://www.w3.org/2000/svg" height="48" width="48"><path d="M22.5 36.7h3v-6.45H32v-3h-6.5v-6.5h-3v6.5H16v3h6.5Zm-11.05 8.55q-1.95 0-3.325-1.375Q6.75 42.5 6.75 40.55V7.45q0-1.95 1.375-3.35Q9.5 2.7 11.45 2.7H29.6l11.7 11.7v26.15q0 1.95-1.4 3.325-1.4 1.375-3.35 1.375Zm15.65-28.5h9.45l-9.45-9.3Z"/></svg>
+        </a>
+      </div>
+      <div class="desc-container">
+        <div class="title">
+          <a href="/enter_bug.cgi">Report a new [% terms.bug %] in a Mozilla product</a>
         </div>
-        <div class="desc-container">
-          <div class="title">
-            <a href="/enter_bug.cgi">Report a new [% terms.bug %] in a Mozilla product</a>
-          </div>
-          <div class="desc">
-            <a href="/page.cgi?id=etiquette.html">Bugzilla Etiquette</a>
-            |
-            <a href="https://support.mozilla.org/kb/contributors-guide-writing-good-bug">Tips for filing a [% terms.bug %]</a>
-          </div>
+        [% IF !user.id %]
+        <div class="desc">
+          Requires a Bugzilla account
+        </div>
+        [% END %]
+        <div class="desc">
+          <a href="/page.cgi?id=etiquette.html">Bugzilla Etiquette</a>
+          |
+          <a href="https://support.mozilla.org/kb/contributors-guide-writing-good-bug">Tips for filing a [% terms.bug %]</a>
         </div>
       </div>
-    [% ELSE %]
+    </div>
+    [% IF !user.id %]
       <div class="option">
         <div class="icon">
           <a href="/createaccount.cgi">
@@ -90,7 +96,7 @@
           </div>
           <div class="desc">
             Required before you can <b>report a [% terms.bug %] in Firefox or other Mozilla products</b>.<br>
-            You can also <a href="?GoAheadAndLogIn=1">log into an existing account</a>.
+            You can also <a href="?GoAheadAndLogIn=1">log in to an existing account</a>.
           </div>
         </div>
       </div>
@@ -157,7 +163,11 @@
     </div>
   </div>
 
+  [% IF Param('cookie_consent_enabled') && Bugzilla.cgi.cookie_consent_required %]
+  <div>
+    <a href="[% basepath FILTER none %]page.cgi?id=cookies.html">Manage Cookie Preferences</a>
+  </div>
+  [% END %]
 </div>
-
 
 [% PROCESS global/footer.html.tmpl %]

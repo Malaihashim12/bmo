@@ -257,9 +257,12 @@ sub page_before_template {
     require Bugzilla::Extension::BMO::Reports::ProductSecurity;
     Bugzilla::Extension::BMO::Reports::ProductSecurity::report($vars);
   }
+  elsif ($page eq 'attention.html') {
+    require Bugzilla::Extension::BMO::Reports::Attention;
+    Bugzilla::Extension::BMO::Reports::Attention::report($vars);
+  }
   elsif ($page eq 'whats_next.html') {
-    require Bugzilla::Extension::BMO::Reports::WhatsNext;
-    Bugzilla::Extension::BMO::Reports::WhatsNext::report($vars);
+    Bugzilla->cgi->base_redirect('page.cgi?id=attention.html');
   }
   elsif ($page eq 'fields.html') {
 
@@ -407,7 +410,7 @@ sub parse_bounty_attachment_description {
     fixed_date     => $+{fixed_date} // '',
     awarded_date   => $+{awarded_date} // '',
     publish        => $map{$+{publish} // 'false'},
-    credit         => [grep {$_} split(/\s*,\s*/, $+{credits})]
+    credit         => [grep {$_} split(/\s*,\s*/, $+{credits} || '')]
   };
 }
 
@@ -600,7 +603,7 @@ sub bug_format_comment {
         my $args  = shift;
         my $match = html_quote($args->{matches}->[0]);
         return
-          qq{<a href="https://cve.mitre.org/cgi-bin/cvename.cgi?name=$match">$match</a>};
+          qq{<a href="https://www.cve.org/CVERecord?id=$match">$match</a>};
       }
     }
   );
@@ -1728,8 +1731,8 @@ sub _log_sent_email {
   $bug_id = $bug_id ? "bug-$bug_id" : '-';
 
   my $message_type;
-  my $type   = $email->header('X-Bugzilla-Type');
-  my $reason = $email->header('X-Bugzilla-Reason');
+  my $type   = $email->header('X-Bugzilla-Type')   || '';
+  my $reason = $email->header('X-Bugzilla-Reason') || '';
   if ($type eq 'whine' || $type eq 'request' || $type eq 'admin') {
     $message_type = $type;
   }
@@ -2867,29 +2870,6 @@ sub app_startup {
   $r->any('/:REWRITE_mozpr' => [REWRITE_mozpr => qr{form[\.:]mozpr}])
     ->to('CGI#enter_bug_cgi' => {'product' => 'Mozilla PR', 'format' => 'mozpr'},
     );
-  $r->any('/:REWRITE_reps_mentorship' =>
-      [REWRITE_reps_mentorship => qr{form[\.:]reps[\.:]mentorship}])
-    ->to(
-    'CGI#enter_bug_cgi' => {'product' => 'Mozilla Reps', 'format' => 'mozreps'},);
-  $r->any('/:REWRITE_reps_budget' =>
-      [REWRITE_reps_budget => qr{form[\.:]reps[\.:]budget}])
-    ->to(
-    'CGI#enter_bug_cgi' => {'product' => 'Mozilla Reps', 'format' => 'remo-budget'}
-    );
-  $r->any(
-    '/:REWRITE_reps_swag' => [REWRITE_reps_swag => qr{form[\.:]reps[\.:]swag}])
-    ->to(
-    'CGI#enter_bug_cgi' => {'product' => 'Mozilla Reps', 'format' => 'remo-swag'});
-  $r->any('/:REWRITE_reps_it' => [REWRITE_reps_it => qr{form[\.:]reps[\.:]it}])
-    ->to(
-    'CGI#enter_bug_cgi' => {'product' => 'Mozilla Reps', 'format' => 'remo-it'});
-  $r->any('/:REWRITE_reps_payment' =>
-      [REWRITE_reps_payment => qr{form[\.:]reps[\.:]payment}])
-    ->to('CGI#page_cgi' => {'id' => 'remo-form-payment.html'});
-  $r->any('/:REWRITE_csa_discourse' =>
-      [REWRITE_csa_discourse => qr{form[\.:]csa[\.:]discourse}])
-    ->to('CGI#enter_bug_cgi' =>
-      {'product' => 'Infrastructure & Operations', 'format' => 'csa-discourse'});
   $r->any('/:REWRITE_employee_incident' =>
       [REWRITE_employee_incident => qr{form[\.:]employee[\.\-:]incident}])
     ->to('CGI#enter_bug_cgi' =>
@@ -2984,6 +2964,10 @@ sub app_startup {
     => sub { my $c = shift; $c->redirect_to('https://mzl.la/devevents'); });
   $r->any( '/:REWRITE_ipc' => [ REWRITE_ipc => qr{form[\.:](?:ipc|IPC)} ]
     => sub { my $c = shift; $c->redirect_to('https://mzl.la/snippet-submit-form'); });
+
+  # What needs my attention report
+  $r->any('/:REWRITE_attention' => [REWRITE_attention => qr{attention}])
+    ->to('CGI#page_cgi' => {'id' => 'attention.html'});
 }
 
 __PACKAGE__->NAME;
