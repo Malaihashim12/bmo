@@ -37,11 +37,11 @@ function toggleRequesteeField(flagField, no_focus)
   // Show or hide the requestee field based on the value
   // of the flag field.
   if (flagField.value == "?") {
-      YAHOO.util.Dom.removeClass(requesteeField.parentNode, 'bz_default_hidden');
+      requesteeField.parentElement.classList.remove('bz_default_hidden');
       requesteeField.required = true;
       if (!no_focus) requesteeField.focus();
   } else {
-      YAHOO.util.Dom.addClass(requesteeField.parentNode, 'bz_default_hidden');
+      requesteeField.parentElement.classList.add('bz_default_hidden');
       requesteeField.required = false;
   }
 }
@@ -71,8 +71,20 @@ function hideRequesteeFields()
       id = inputElement.name.replace(/requestee(_type)?-(\d+)/, "flag$1-$2");
       flagField = document.getElementById(id);
       if (flagField && flagField.value != "?")
-          YAHOO.util.Dom.addClass(inputElement.parentNode, 'bz_default_hidden');
+          inputElement.parentElement.classList.add('bz_default_hidden');
     }
   }
 }
-YAHOO.util.Event.onDOMReady(hideRequesteeFields);
+
+window.addEventListener('DOMContentLoaded', () => {
+  hideRequesteeFields();
+
+  // Activate all the `<select class="flag_select">` elements on the bug form.
+  document.querySelectorAll('.flag-table').forEach(($table) => {
+    $table.addEventListener('change', (event) => {
+      if (event.target.matches('.flag_select')) {
+        toggleRequesteeField(event.target);
+      }
+    });
+  });
+});

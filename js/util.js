@@ -328,18 +328,15 @@ function bz_fireEvent(anElement, anEvent) {
  * Adds a CSS class to an element if it doesn't have it. Removes the
  * CSS class from the element if the element does have the class.
  *
- * Requires YUI's Dom library.
- *
  * @param anElement  The element to toggle the class on
  * @param aClass     The name of the CSS class to toggle.
  */
 function bz_toggleClass(anElement, aClass) {
-    if (YAHOO.util.Dom.hasClass(anElement, aClass)) {
-        YAHOO.util.Dom.removeClass(anElement, aClass);
+    if (typeof anElement === 'string') {
+        anElement = document.getElementById(anElement);
     }
-    else {
-        YAHOO.util.Dom.addClass(anElement, aClass);
-    }
+
+    anElement?.classList.toggle(aClass);
 }
 
 /* Returns a string representation of a duration.
@@ -351,10 +348,12 @@ function bz_toggleClass(anElement, aClass) {
 function timeAgo(param) {
     var ss = param.constructor === Date ? Math.round((new Date() - param) / 1000) : param;
     var mm = Math.round(ss / 60),
-        hh = Math.round(mm / 60),
-        dd = Math.round(hh / 24),
-        mo = Math.round(dd / 30),
-        yy = Math.round(mo / 12);
+        hh = Math.round(ss / (60 * 60)),
+        dd = Math.round(ss / (60 * 60 * 24)),
+        // They are not the best definition of month and year,
+        // but they should be good enough to be used here.
+        mo = Math.round(ss / (60 * 60 * 24 * 30)),
+        yy = Math.round(ss / (60 * 60 * 24 * 365.2422));
     if (ss < 10) return 'Just now';
     if (ss < 45) return ss + ' seconds ago';
     if (ss < 90) return '1 minute ago';
@@ -368,6 +367,66 @@ function timeAgo(param) {
     if (mo < 18) return '1 year ago';
     return yy + ' years ago';
 }
+
+/**
+ * Format the given date as Bugzilla’s standard date format.
+ * @param {Date | string} date Date instance or parsable date string.
+ * @returns {string} Formatted date, e.g. `2023-04-05 06:07 PST`.
+ */
+const formatDate = (date) => {
+  /** @type {Intl.DateTimeFormatOptions} */
+  const options = {
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    timeZoneName: 'short',
+  };
+
+  const { year, month, day, hour, minute, timeZoneName } = Object.fromEntries(
+    new Intl.DateTimeFormat('en-US', { ...options, hour12: false })
+      .formatToParts(new Date(date))
+      .filter(({ type }) => type in options)
+      .map(({ type, value }) => [type, type === 'hour' && value === '24' ? '00' : value]),
+  );
+
+  return `${year}-${month}-${day} ${hour}:${minute} ${timeZoneName}`;
+};
+
+/**
+ * Format the given file size as human-readable format.
+ * @param {number} size Numeric size.
+ * @returns {string} Formatted size, e.g. `1.23 MB`.
+ */
+const formatFileSize = (size) => {
+  if (size === 1) {
+    return `${size} byte`;
+  }
+
+  if (size < 1024) {
+    return `${size} bytes`;
+  }
+
+  if (size < 1024 * 1024) {
+    return `${(size / 1024).toFixed(2)} KB`;
+  }
+
+  if (size < 1024 * 1024 * 1024) {
+    return `${(size / (1024 * 1024)).toFixed(2)} MB`;
+  }
+
+  return `${(size / (1024 * 1024 * 1024)).toFixed(2)} GB`;
+};
+
+/**
+ * Decode the given Base64 data.
+ * @param {string} data Encoded data.
+ * @returns {string} Decoded data.
+ * @see https://developer.mozilla.org/en-US/docs/Glossary/Base64#the_unicode_problem
+ */
+const decodeBase64 = (data) =>
+  new TextDecoder().decode(Uint8Array.from(atob(data), (m) => m.codePointAt(0)));
 
 /**
  * Reference or define the Bugzilla app namespace.
@@ -647,5 +706,242 @@ Bugzilla.Error = class CustomError extends Error {
    */
   toString() {
     return `${this.name}: "${this.message}" (code: ${this.code}${this.detail ? `, detail: ${this.detail}` : ''})`;
+  }
+};
+
+/**
+ * Provide static utility methods related to event handlers.
+ */
+Bugzilla.Event = class Event {
+  /**
+   * Add keyboard shortcuts to an element.
+   * @param {EventTarget} $target Event target, such as an `HTMLElement`, `document` or `window`.
+   * @param {Record<string, { handler: (event: KeyboardEvent) => void, preventDefault?: boolean,
+   * stopPropagation?: boolean, setAriaAttr?: boolean }>} mapping Key binding mapping object where
+   * the key is a key combination and the value is a handler function and event options. In most
+   * cases, `Control` (Windows/Linux) and `Meta` (macOS) should be replaced with the `Accel` virtual
+   * modifier that corresponds to both keys. Also, the Space key should be written as `Space`,
+   * whereas `event.key` returns a single space character for that key.
+   * @see https://w3c.github.io/aria/#aria-keyshortcuts
+   * @see https://developer.mozilla.org/en-US/docs/Web/API/UI_Events/Keyboard_event_key_values
+   * @example { 'Accel+Shift+R': () => this.reload(), 'Accel+Space': event => this.open_bug(event) }
+   */
+  static activateKeyShortcuts($target, mapping) {
+    const { isMac } = Bugzilla.UserAgent;
+
+    const shortcuts = Object.entries(mapping).map(([combination, options]) => {
+      const keys = new Set(combination.split('+'));
+      const accelKey = keys.delete('Accel');
+
+      const keyConfig = {
+        ctrlKey: keys.delete('Control') || (!isMac && accelKey),
+        metaKey: keys.delete('Meta') || (isMac && accelKey),
+        altKey: keys.delete('Alt'),
+        shiftKey: keys.delete('Shift'),
+      };
+
+      const key = keys.size ? [...keys][0] : undefined;
+
+      if (key) {
+        // While the keys should be written in the format of `KeyboardEvent` key values (with the
+        // exception of Accel and Space, as explained above), `event.key` itself cannot always be
+        // relied upon because it can change when the Shift key is pressed. For that reason, we
+        // primarily use `event.keyCode` instead.
+        const keyCode =
+          KeyboardEvent[`DOM_VK_${{ '.': 'PERIOD', Enter: 'RETURN' }[key] ?? key.toUpperCase()}`];
+
+        if (keyCode) {
+          Object.assign(keyConfig, { keyCode });
+        } else {
+          Object.assign(keyConfig, { key });
+        }
+      }
+
+      const {
+        preventDefault = true,
+        stopPropagation = true,
+        setAriaAttr = false,
+        handler,
+      } = options;
+
+      if ($target instanceof HTMLElement && setAriaAttr) {
+        $target.setAttribute('aria-keyshortcuts', this.formatKeyShortcut(combination, true));
+      }
+
+      return {
+        keys: keyConfig,
+        preventDefault,
+        stopPropagation,
+        handler,
+      };
+    });
+
+    $target.addEventListener('keydown', (/** @type {KeyboardEvent} */ event) => {
+      if (event.isComposing) {
+        return;
+      }
+
+      shortcuts.forEach(({ keys, preventDefault, stopPropagation, handler }) => {
+        if (Object.entries(keys).every(([key, value]) => event[key] === value)) {
+          if (preventDefault) {
+            event.preventDefault();
+          }
+
+          if (stopPropagation) {
+            event.stopPropagation();
+          }
+
+          handler(event);
+        }
+      });
+    });
+  }
+
+  /**
+   * Format the given keyboard shortcut according to the user’s operating system.
+   * @param {string} combination Shortcut, e.g. `Accel+Shift+R`.
+   * @param {boolean} [forAria] Whether the formatted shortcut is used for the `aria-keyshortcuts`
+   * attribute.
+   * @returns {string} Formatted shortcut.
+   */
+  static formatKeyShortcut = (combination, forAria = false) => {
+    const { isMac } = Bugzilla.UserAgent;
+
+    if (forAria) {
+      return combination.replace(/\bAccel\b/, isMac ? 'Meta' : 'Control');
+    }
+
+    if (!isMac) {
+      return combination.replace(/\bAccel\b/, 'Ctrl');
+    }
+
+    const keys = new Set(combination.split('+'));
+    const keyArray = [];
+
+    if (keys.delete('Control')) {
+      keyArray.push('⌃');
+    }
+
+    if (keys.delete('Shift')) {
+      keyArray.push('⇧');
+    }
+
+    if (keys.delete('Alt')) {
+      keyArray.push('⌥');
+    }
+
+    if (keys.delete('Meta') || keys.delete('Accel')) {
+      keyArray.push('⌘');
+    }
+
+    if (keys.size) {
+      keyArray.push([...keys][0]);
+    }
+
+    return keyArray.join('');
+  }
+};
+
+/**
+ * A simple Web Storage API wrapper handling JSON parse/stringify.
+ */
+Bugzilla.Storage = class LocalStorage {
+  /**
+   * Get a value.
+   * @param {string} key A storage key.
+   * @param {any} [fallback] Whether to return `{}` instead of `null` when the value is unavailable.
+   * @returns A storage value or null.
+   */
+  static get(key) {
+    const cache = window.localStorage.getItem(key);
+    let value = null;
+    if (cache !== null) {
+      try {
+        value = JSON.parse(cache);
+      } catch {
+        value = cache;
+      }
+    }
+    return value;
+  }
+
+  /**
+   * Set a value.
+   * @param {string} key A storage key.
+   * @param {object} value A storage value.
+   */
+  static set(key, value) {
+    if (BUGZILLA.user.cookie_consent === 'no'
+      && !BUGZILLA.config.essential_cookies.includes(key))
+    {
+      return null;
+    }
+    if (typeof value === 'object' && value !== null) {
+      value = JSON.stringify(value);
+    }
+    window.localStorage.setItem(key, value);
+  }
+
+  /**
+   * Merge an existing value with a new value.
+   * @param {string} key A storage key.
+   * @param {object} value A storage value.
+   */
+  static update(key, value) {
+    this.set(key, { ...this.get(key, true), ...value });
+  }
+
+  /**
+   * Delete a value.
+   * @param {string} key A storage key.
+   */
+  static delete(key) {
+    window.localStorage.removeItem(key);
+  }
+
+  /**
+   * Clear the storage.
+   */
+  static clear() {
+    window.localStorage.clear();
+  }
+}
+
+/**
+ * Provide static utility methods related to string parsing and manipulation.
+ */
+Bugzilla.String = class String {
+  /**
+   * Escape special characters in a string so it can be used for `new RegExp()`.
+   * @param {string} string Input string.
+   * @returns {string} Escaped string.
+   * @see https://developer.mozilla.org/en-US/docs/Web/JavaScript/Guide/Regular_expressions#escaping
+   */
+  static escapeRegExp(string) {
+    return string.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  }
+
+  /**
+   * Generate a random hash string like `57d627e` that can be used for DOM node IDs.
+   * @param {number} [length] Size of hash.
+   * @returns {string} Generated hash.
+   */
+  static generateHash(length = 7) {
+    return [...Array(length)]
+      .map(() => '0123456789abcdef'[Math.floor(Math.random() * 16)])
+      .join('');
+  }
+};
+
+/**
+ * Provide static utility methods related to the user’s browser and operating system.
+ */
+Bugzilla.UserAgent = class UserAgent {
+  /**
+   * Check if the user is on the macOS platform.
+   * @type {boolean}
+   */
+  static get isMac() {
+    return navigator.platform === 'MacIntel';
   }
 };

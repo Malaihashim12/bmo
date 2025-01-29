@@ -23,7 +23,7 @@ file_bug_in_product($sel, "TestProduct");
 my $bug_summary = "Security checks";
 $sel->type_ok("short_desc", $bug_summary);
 $sel->type_ok("comment",    "This bug will be used to test security fixes.");
-$sel->click_ok('//input[@value="Add an attachment"]');
+$sel->click_ok('attach-new-file');
 $sel->attach_file('//input[@name="data"]', $config->{attachment_file});
 $sel->type_ok('//input[@name="description"]', "simple patch, v1");
 my $bug1_id = create_bug($sel, $bug_summary);
@@ -76,7 +76,7 @@ $sel->title_like(qr/^$bug1_id /);
 #######################################################################
 
 $sel->click_ok('header-account-menu-button');
-$sel->click_ok("link=Preferences");
+$sel->click_ok("//a[./span[contains(text(), 'Preferences')]]");
 $sel->wait_for_page_to_load_ok(WAIT_TIME);
 $sel->title_is("User Preferences");
 my $admin_cookie = $sel->get_value("token");
@@ -84,7 +84,7 @@ logout($sel);
 
 log_in($sel, $config, 'editbugs');
 $sel->click_ok('header-account-menu-button');
-$sel->click_ok("link=Preferences");
+$sel->click_ok("//a[./span[contains(text(), 'Preferences')]]");
 $sel->wait_for_page_to_load_ok(WAIT_TIME);
 $sel->title_is("User Preferences");
 my $editbugs_cookie = $sel->get_value("token");
@@ -166,17 +166,23 @@ set_parameters($sel,
 # Attachments are not viewable.
 
 go_to_bug($sel, $bug1_id);
+my $alink = $sel->get_attribute("link=Details\@href");
+$alink =~ /id=(\d+)/;
+my $attachment1_id = $1;
 $sel->click_ok("link=Details");
-$sel->wait_for_page_to_load_ok(WAIT_TIME);
-$sel->title_like(qr/Attachment \d+ Details for Bug $bug1_id/);
+# Wait a sec before the attachment overlay is loaded.
+sleep(1);
+$sel->is_element_present_ok(
+  qq{//h2[normalize-space(text())="Attachment $attachment1_id: simple patch, v1"]}
+);
 $sel->is_text_present_ok(
   "The attachment is not viewable in your browser due to security restrictions");
-$sel->click_ok("link=View");
+$sel->click_ok('//dialog[@id="att-overlay"]//button[@data-action="raw"]');
 
 # Wait 1 second to give the browser a chance to display the attachment.
 # Do not use wait_for_page_to_load_ok() as the File Saver will never go away.
 sleep(1);
-$sel->title_like(qr/Attachment \d+ Details for Bug $bug1_id/);
+$sel->title_like(qr/$bug1_id /);
 ok(!$sel->is_text_present('@@'), "Patch not displayed");
 
 # Enable viewing attachments.

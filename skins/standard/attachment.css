@@ -216,13 +216,6 @@ table.attachment_info td {
   margin: 0 0 0 16px;
 }
 
-#smallCommentFrame #comment,
-#smallCommentFrame #comment_preview {
-  display: block;
-  box-sizing: border-box;
-  width: 100% !important;
-}
-
 textarea.bz_private {
   border: 1px solid var(--accent-color-pink-1);
 }
@@ -318,7 +311,7 @@ textarea#viewFrame {
 
 #att-selector .icon::before {
   line-height: 100%;
-  font-family: "Material Icons";
+  font-family: var(--icon-font-family);
   font-style: normal;
 }
 
@@ -536,5 +529,19 @@ textarea#viewFrame {
 
   #smallCommentFrame {
     margin: 16px 0 0 0;
+  }
+}
+
+@media screen and (max-width: 799px) {
+  #att-dropbox,
+  #att-error-message,
+  #att-description {
+    width: 100%;
+  }
+
+  table.attachment_entry > tbody > tr > th {
+    width: auto !important;
+    margin: 8px 0 4px;
+    text-align: left;
   }
 }

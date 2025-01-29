@@ -7,7 +7,11 @@ BMO is Mozilla's highly customized version of Bugzilla.
 .. image:: https://circleci.com/gh/mozilla-bteam/bmo/tree/master.svg?style=svg
     :target: https://circleci.com/gh/mozilla-bteam/bmo/tree/master
 
-.. image:: https://github.com/mozilla-bteam/bmo/actions/workflows/main.yml/badge.svg
+.. image:: https://readthedocs.org/projects/bmo/badge/?version=latest
+    :target: https://bmo.readthedocs.io/en/latest/?badge=latest
+    :alt: Documentation Status
+
+.. image:: https://github.com/mozilla-bteam/bmo/actions/workflows/deploy.yml/badge.svg
     :target: https://github.com/mozilla-bteam/bmo/actions
 
 .. contents::
@@ -51,15 +55,9 @@ following command instead:
 
 .. code-block:: bash
 
-    docker-compose up --build bmo.test
+    docker compose up --build bmo.test
 
-Then, you must configure your browser to use localhost and port 1080 as an HTTP proxy.
-For setting a proxy in Firefox, see `Firefox Connection Settings`_.
-The procedure should be similar for other browsers.
-
-.. _`Firefox Connection Settings`: https://support.mozilla.org/en-US/kb/connection-settings-firefox
-
-After that, you should be able to visit http://bmo.test/ from your browser.
+After that, you should be able to visit http://localhost:8000/ from your browser.
 You can login as admin@mozilla.bugs with the password "password012!" (without
 quotes).
 
@@ -317,14 +315,6 @@ environmental variable.
 Logging configuration also controls which errors are sent to Sentry.
 
 
-Persistent Data Volume
-----------------------
-
-This container expects /app/data to be a persistent, shared, writable directory
-owned by uid 10001. This must be a shared (NFS/EFS/etc) volume between all
-nodes.
-
-
 Development Tips
 ================
 
@@ -338,24 +328,24 @@ Basic sanity tests
 
 .. code-block:: bash
 
-  docker compose -f docker-compose.test.yml down && docker build -t bmo . && docker compose -f docker-compose.test.yml run -e CI=1 --no-deps bmo.test test_sanity
+  docker compose -f docker-compose.test.yml down && docker compose -f docker-compose.test.yml run -e CI=1 --no-deps bmo.test test_sanity
 
 Webservices API tests
 
 .. code-block:: bash
 
-  docker compose -f docker-compose.test.yml down && docker build -t bmo . && docker compose -f docker-compose.test.yml run bmo.test test_webservices
+  docker compose -f docker-compose.test.yml down && docker compose -f docker-compose.test.yml run bmo.test test_webservices
 
 Selenium Web UI tests
 
 .. code-block:: bash
 
-  docker compose -f docker-compose.test.yml down && docker build -t bmo . && docker compose -f docker-compose.test.yml run bmo.test test_selenium
+  docker compose -f docker-compose.test.yml down && docker compose -f docker-compose.test.yml run bmo.test test_selenium
 
 Testing Emails
 --------------
 
-Configure your MTA setting you want to use by going to http://bmo.test/editparams.cgi?section=mta
+Configure your MTA setting you want to use by going to http://localhost:8000/editparams.cgi?section=mta
 and changing the mail_delivery_method to 'Test'. With this option, all mail will be appended to a
 ``data/mailer.testfile``. To see the emails being sent:
 

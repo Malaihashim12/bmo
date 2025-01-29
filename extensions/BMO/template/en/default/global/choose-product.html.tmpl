@@ -44,7 +44,8 @@
   classification = cgi.param('classification');
 
   PROCESS global/header.html.tmpl
-    generate_api_token = 1;
+    generate_api_token = 1
+    responsive         = 1;
 %]
 
 [% IF NOT is_describe %]
@@ -155,7 +156,7 @@
 
 [% ELSE %]
 
-  <table>
+  <table class="[% 'responsive' IF responsive %]">
     [% FOREACH cls = classifications %]
       [% IF cls.object %]
         <tr>

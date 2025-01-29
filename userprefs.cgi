@@ -19,6 +19,7 @@ use Bugzilla::Mailer;
 use Bugzilla::Search;
 use Bugzilla::Util;
 use Bugzilla::Error;
+use Bugzilla::Reminder;
 use Bugzilla::User;
 use Bugzilla::User::Setting qw(clear_settings_cache);
 use Bugzilla::User::Session;
@@ -71,6 +72,10 @@ sub DoAccount {
       }
     }
   }
+
+  $vars->{cookie_consent_changed}
+    = Bugzilla->request_cache->{cookie_consent_changed}
+    if Bugzilla->request_cache->{cookie_consent_changed};
 }
 
 sub SaveAccount {
@@ -534,38 +539,76 @@ sub SaveEmail {
 sub DoPermissions {
   my $dbh  = Bugzilla->dbh;
   my $user = Bugzilla->user;
-  my (@has_bits, @set_bits);
 
-  my $groups
-    = $dbh->selectall_arrayref('SELECT DISTINCT name, description FROM '
-      . $dbh->quote_identifier('groups')
-      . ' WHERE id IN ('
-      . $user->groups_as_string
-      . ') ORDER BY name');
-  foreach my $group (@$groups) {
-    my ($nam, $desc) = @$group;
-    push(@has_bits, {"desc" => $desc, "name" => $nam});
-  }
-  $groups = $dbh->selectall_arrayref(
-    'SELECT DISTINCT id, name, description
-       FROM ' . $dbh->quote_identifier('groups') . '
-      ORDER BY name'
+  # we need to show which groups are direct and which are inherited
+  my $groups_to_check = $dbh->selectcol_arrayref(
+    q{SELECT DISTINCT group_id
+          FROM user_group_map
+         WHERE user_id = ? AND isbless = 0}, undef, $user->id
   );
-  foreach my $group (@$groups) {
-    my ($group_id, $nam, $desc) = @$group;
-    if ($user->can_bless($group_id)) {
-      push(@set_bits, {"desc" => $desc, "name" => $nam});
+
+  my $rows = $dbh->selectall_arrayref(
+    q{SELECT DISTINCT grantor_id, member_id
+         FROM group_group_map
+        WHERE grant_type = ?}, undef, GROUP_MEMBERSHIP
+  );
+
+  my %group_membership;
+  foreach my $row (@{$rows}) {
+    my ($grantor_id, $member_id) = @{$row};
+    push @{$group_membership{$member_id}}, $grantor_id;
+  }
+
+  my %checked_groups;
+  my %direct_groups;
+  my %indirect_groups;
+  my %groups;
+
+  foreach my $member_id (@{$groups_to_check}) {
+    $direct_groups{$member_id} = 1;
+  }
+
+  while (scalar(@{$groups_to_check}) > 0) {
+    my $member_id = shift @{$groups_to_check};
+    if (!$checked_groups{$member_id}) {
+      $checked_groups{$member_id} = 1;
+      my $members      = $group_membership{$member_id};
+      my @new_to_check = grep { !$checked_groups{$_} } @{$members};
+      push @{$groups_to_check}, @new_to_check;
+      foreach my $id (@new_to_check) {
+        $indirect_groups{$id} = $member_id;
+      }
+      $groups{$member_id} = 1;
     }
   }
+
+  my @groups;
+  my $ra_groups = Bugzilla::Group->new_from_list([keys %groups]);
+  foreach my $group (@{$ra_groups}) {
+    my %inherited;
+    if (!$direct_groups{$group->id}) {
+      foreach my $g (@{$ra_groups}) {
+        if ($g->id == $indirect_groups{$group->id}) {
+          $inherited{$g->name} = 1;
+        }
+      }
+    }
+    push @groups,
+      {
+      name        => $group->name,
+      description => $group->description,
+      can_bless   => $user->can_bless($group->id),
+      inherited   => [keys %inherited],
+      };
+  }
+
+  $vars->{groups} = \@groups;
 
   # If the user has product specific privileges, inform them about that.
   foreach my $privs (PER_PRODUCT_PRIVILEGES) {
     next if $user->in_group($privs);
-    $vars->{"local_$privs"} = $user->get_products_by_permission($privs);
+    $vars->{"product_$privs"} = $user->get_products_by_permission($privs);
   }
-
-  $vars->{'has_bits'} = \@has_bits;
-  $vars->{'set_bits'} = \@set_bits;
 }
 
 # No SavePermissions() because this panel has no changeable fields.
@@ -739,6 +782,8 @@ sub SaveMFAupdate {
     $settings->{api_key_only}->set('on');
     clear_settings_cache(Bugzilla->user->id);
 
+    $user->set_mfa_required_date(undef); # Clear requirement date if set
+
     $user->update({keep_session => 1, keep_tokens => 1});
     $dbh->bz_commit_transaction;
   }
@@ -769,6 +814,11 @@ sub SaveMFAcallback {
   my $mfa       = Bugzilla->cgi->param('mfa');
   my $provider  = Bugzilla::MFA->new_from($user, $mfa) // return;
   my $event     = $provider->verify_token($mfa_token);
+
+  # Must have passed the Duo verification to proceed to update
+  if ($mfa eq 'Duo' && !$event->{duo_verified}) {
+    ThrowUserError('duo_user_error', {reason => 'Invalid Duo Security MFA Code'});
+  }
 
   SaveMFAupdate($event->{action}, $mfa);
 }
@@ -954,6 +1004,74 @@ sub MfaApiKey {
   }
 }
 
+sub DoReminders {
+  my $input = Bugzilla->input_params;
+  my $user  = Bugzilla->user;
+
+  return
+    unless Bugzilla->params->{reminders_enabled}
+    && $user->in_group(Bugzilla->params->{reminders_group});
+
+  # Sort by soonest first. Also do not display reminders that have been sent already
+  my $reminders = Bugzilla::Reminder->match({user_id => $user->id, sent => 0});
+  $reminders = [reverse sort { $a->reminder_ts <=> $b->reminder_ts } @{$reminders}];
+
+  $vars->{reminders} = $reminders;
+  $vars->{bug_id}    = $input->{bug_id} if $input->{bug_id};
+  $vars->{note}      = $input->{note}   if $input->{note};
+}
+
+sub SaveReminders {
+  my $input = Bugzilla->input_params;
+  my $user  = Bugzilla->user;
+  my $dbh   = Bugzilla->dbh;
+
+  return
+    unless Bugzilla->params->{reminders_enabled}
+    && $user->in_group(Bugzilla->params->{reminders_group});
+
+  # remove reminder(s)
+  my $ids = ref($input->{remove}) ? $input->{remove} : [$input->{remove}];
+
+  my $reminders = Bugzilla::Reminder->match({id => $ids, user_id => $user->id});
+
+  $dbh->bz_start_transaction;
+  foreach my $reminder (@$reminders) {
+    $reminder->remove_from_db();
+  }
+  $dbh->bz_commit_transaction();
+
+  # Add a new reminder
+  if ($input->{'add_reminder'}) {
+    my $bug_id        = trim(delete $input->{bug_id});
+    my $note          = trim(delete $input->{note} || '');
+    my $remind_type   = trim(delete $input->{remind_type});
+    my $remind_days   = trim(delete $input->{remind_days});
+    my $remind_months = trim(delete $input->{remind_months});
+    my $remind_date   = trim(delete $input->{remind_date});
+
+    my $date_now = DateTime->now;
+    if ($remind_type eq 'days') {
+      $remind_date
+        = $date_now->add(days => $remind_days)->strftime('%Y-%m-%d');
+    }
+    elsif ($remind_type eq 'months') {
+      $remind_date
+        = $date_now->add(months => $remind_months)->strftime('%Y-%m-%d');
+    }
+
+    Bugzilla::Reminder->create({
+      user_id     => $user->id,
+      bug_id      => $bug_id,
+      reminder_ts => $remind_date,
+      note        => $note,
+    });
+
+    # Reset reminder count
+    delete $user->{reminder_count};
+  }
+}
+
 sub _create_api_key {
   my ($description) = @_;
   my $user = Bugzilla->user;
@@ -1005,8 +1123,10 @@ my $save_changes    = $cgi->param('dosave');
 my $disable_account = $cgi->param('account_disable');
 $vars->{'changes_saved'} = $save_changes || $mfa_token;
 
-my $current_tab_name = $cgi->param('tab') || "account";
+my $specified_tab_name = $cgi->param('tab');
+my $current_tab_name = $specified_tab_name || 'account';
 
+$vars->{'specified_tab_name'} = $specified_tab_name;
 $vars->{'current_tab_name'} = $current_tab_name;
 
 my $token = $cgi->param('token');
@@ -1071,6 +1191,11 @@ SWITCH: for ($current_tab_name) {
     SaveMFAcallback($mfa_token) if $mfa_token;
     SaveMFA()                   if $save_changes;
     DoMFA();
+    last SWITCH;
+  };
+  /^reminders$/ && do {
+    SaveReminders() if $save_changes;
+    DoReminders();
     last SWITCH;
   };
 

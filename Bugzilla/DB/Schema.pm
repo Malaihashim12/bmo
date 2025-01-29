@@ -418,6 +418,32 @@ use constant ABSTRACT_SCHEMA => {
     ],
   },
 
+  longdescs_reactions => {
+    FIELDS => [
+      id         => {TYPE => 'MEDIUMSERIAL', NOTNULL => 1, PRIMARYKEY => 1},
+      comment_id => {
+        TYPE       => 'INT4',
+        REFERENCES =>
+          {TABLE => 'longdescs', COLUMN => 'comment_id', DELETE => 'CASCADE'}
+      },
+      user_id    => {
+        TYPE       => 'INT3',
+        NOTNULL    => 1,
+        REFERENCES => {TABLE => 'profiles', COLUMN => 'userid'}
+      },
+      reaction   => {TYPE => 'varchar(24)', NOTNULL => 1},
+    ],
+    INDEXES => [
+      longdescs_reactions_reaction_idx => {
+        FIELDS => ['comment_id', 'reaction'],
+      },
+      longdescs_reactions_user_idx => {
+        FIELDS => ['comment_id', 'user_id', 'reaction'],
+        TYPE => 'UNIQUE',
+      },
+    ],
+  },
+
   longdescs_tags => {
     FIELDS => [
       id         => {TYPE => 'MEDIUMSERIAL', NOTNULL => 1, PRIMARYKEY => 1},
@@ -976,12 +1002,14 @@ use constant ABSTRACT_SCHEMA => {
       mfa_required_date      => {TYPE => 'DATETIME'},
       forget_after_date      => {TYPE => 'DATETIME'},
       bounce_count           => {TYPE => 'INT1', NOTNULL => 1, DEFAULT => 0},
+      modification_ts        => {TYPE => 'DATETIME', NOTNULL => 1},
     ],
     INDEXES => [
-      profiles_login_name_idx  => {FIELDS => ['login_name'], TYPE => 'UNIQUE'},
-      profiles_extern_id_idx   => {FIELDS => ['extern_id'],  TYPE => 'UNIQUE'},
-      profiles_nickname_idx    => ['nickname'],
-      profiles_realname_ft_idx => {FIELDS => ['realname'], TYPE => 'FULLTEXT'},
+      profiles_login_name_idx      => {FIELDS => ['login_name'], TYPE => 'UNIQUE'},
+      profiles_extern_id_idx       => {FIELDS => ['extern_id'],  TYPE => 'UNIQUE'},
+      profiles_modification_ts_idx => ['modification_ts'],
+      profiles_nickname_idx        => ['nickname'],
+      profiles_realname_ft_idx     => {FIELDS => ['realname'], TYPE => 'FULLTEXT'},
     ],
   },
 
@@ -1043,20 +1071,6 @@ use constant ABSTRACT_SCHEMA => {
       profile_mfa_userid_name_idx =>
         {FIELDS => ['user_id', 'name'], TYPE => 'UNIQUE'},
     ],
-  },
-
-  profiles_iam => {
-    FIELDS => [
-      id      => {TYPE => 'INTSERIAL', NOTNULL => 1, PRIMARYKEY => 1},
-      user_id => {
-        TYPE       => 'INT3',
-        NOTNULL    => 1,
-        REFERENCES => {TABLE => 'profiles', COLUMN => 'userid', DELETE => 'CASCADE'}
-      },
-      iam_username => {TYPE => 'varchar(255)', NOTNULL => 1},
-    ],
-    INDEXES =>
-      [profile_iam_userid_idx => {FIELDS => ['user_id'], TYPE => 'UNIQUE'},],
   },
 
   email_setting => {
@@ -1979,7 +1993,30 @@ use constant ABSTRACT_SCHEMA => {
       name  => {TYPE => 'VARCHAR(64)',   NOTNULL => 1},
       value => {TYPE => 'VARCHAR(255)', NOTNULL => 1},
     ],
-  }
+  },
+
+  # Reminders Table
+  # ---------------
+
+  reminders => {
+    FIELDS => [
+      id      => {TYPE => 'MEDIUMSERIAL', NOTNULL => 1, PRIMARYKEY => 1},
+      user_id => {
+        TYPE       => 'INT3',
+        NOTNULL    => 1,
+        REFERENCES => {TABLE => 'profiles', COLUMN => 'userid', DELETE => 'CASCADE',},
+      },
+      creation_ts => {TYPE => 'DATETIME', NOTNULL => 1},
+      reminder_ts => {TYPE => 'DATETIME', NOTNULL => 1},
+      bug_id      => {
+        TYPE       => 'INT3',
+        NOTNULL    => 1,
+        REFERENCES => {TABLE => 'bugs', COLUMN => 'bug_id', DELETE => 'CASCADE',},
+      },
+      note => {TYPE => 'VARCHAR(255)'},
+      sent => {TYPE => 'BOOLEAN', NOTNULL => 1, DEFAULT => 'FALSE'},
+    ],
+  },
 };
 
 # Foreign Keys are added in Bugzilla::DB::bz_add_field_tables

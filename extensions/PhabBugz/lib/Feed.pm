@@ -378,11 +378,25 @@ sub readable_answer {
 }
 
 sub format_uplift_request_as_markdown {
-  my ($question_answers_mapping) = @_;
+  my ($repo_short_name, $question_answers_mapping) = @_;
 
-  my $comment = "# Uplift Approval Request\n";
+  # Form content will come across a JSON object. Ensure the question/response pairs
+  # are added to the markdown output in the correct order.
+  my @uplift_questions_order = (
+    "User impact if declined",
+    "Code covered by automated testing",
+    "Fix verified in Nightly",
+    "Needs manual QE test",
+    "Steps to reproduce for manual QE testing",
+    "Risk associated with taking this patch",
+    "Explanation of risk level",
+    "String changes made/needed",
+    "Is Android affected?",
+  );
 
-  foreach my $question (keys %{$question_answers_mapping}) {
+  my $comment = "### $repo_short_name Uplift Approval Request\n";
+
+  foreach my $question (@uplift_questions_order) {
     my $answer = $question_answers_mapping->{$question};
     my $answer_string = readable_answer($answer);
 
@@ -409,7 +423,9 @@ sub process_uplift_request_form_change {
 
   INFO('Commenting the uplift form on the bug.');
 
-  my $comment_content = format_uplift_request_as_markdown($revision->uplift_request);
+  my $comment_content = format_uplift_request_as_markdown(
+    $revision->repository->short_name, $revision->uplift_request
+  );
   my $comment_params = {
     'is_markdown' => 1,
     'isprivate'   => 0,
@@ -631,7 +647,13 @@ sub process_revision_change {
   INFO('If uplift repository we may need to set approval flags');
   if ($revision->repository && $revision->repository->is_uplift_repo()) {
     INFO('Uplift repository detected. Setting attachment approval flags');
-    set_attachment_approval_flags($attachment, $revision);
+
+    # set the approval flags. This ensures that users who create revisions will
+    # set the flag to `?`, and only approvals from `mozilla-next-drivers` group
+    # members will set the flag to `+` or `-`.
+    my $flag_setter = $changer->bugzilla_user;
+
+    set_attachment_approval_flags($attachment, $revision, $flag_setter, $changer);
   }
 
   $attachment->update($timestamp);
@@ -871,16 +893,44 @@ sub process_new_user {
 sub new_stories {
   my ($self, $after) = @_;
   my $data = {view => 'text'};
-  $data->{after} = $after if $after;
+  $data->{after} = ($after ? $after : 1);
 
-  my $result = request('feed.query_id', $data);
+  # For a specific type of error, we will retry up to 5 times
+  # before failing.
+  my $result;
+  foreach my $try (1 .. 5) {
+    $result = request('feed.query_id', $data, 1);    # Do not throw exception yet
 
-  unless (ref $result->{result}{data} eq 'ARRAY' && @{$result->{result}{data}}) {
-    return [];
+    # Skip if an error was not returned or the error is not an invalid object error
+    # for the current id. If it is, then increment the object ID and loop around again
+    if (
+      !$result->{error_info}
+      || ( $result->{error_info}
+        && $result->{error_info} !~ /does not identify a valid object in query/)
+      )
+    {
+      last;
+    }
+
+    WARN( 'ERROR: Invalid feed id '
+        . $data->{after}
+        . ", incrementing (try $try): "
+        . $result->{error_info});
+    $data->{after}++;
   }
 
-  # Guarantee that the data is in ascending ID order
-  return [sort { $a->{id} <=> $b->{id} } @{$result->{result}{data}}];
+  if ($result->{error_info}) {
+    ThrowCodeError('phabricator_api_error',
+      {code => $result->{error_code}, reason => $result->{error_info}});
+  }
+
+  if (ref $result->{result}{data} eq 'ARRAY' && @{$result->{result}{data}}) {
+
+    # Guarantee that the data is in ascending ID order
+    return [sort { $a->{id} <=> $b->{id} } @{$result->{result}{data}}];
+  }
+
+  return [];
 }
 
 sub new_users {

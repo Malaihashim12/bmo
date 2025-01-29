@@ -31,6 +31,8 @@ use Bugzilla::Comment;
 use Bugzilla::BugUrl;
 use Bugzilla::BugUserLastVisit;
 
+use Date::Parse;
+use DateTime;
 use List::MoreUtils qw(firstidx uniq part any);
 use List::Util qw(min max first);
 use Storable qw(dclone);
@@ -3895,6 +3897,22 @@ sub isopened {
   return is_open_state($self->{bug_status}) ? 1 : 0;
 }
 
+# Check if the bug is closed and the last resolved date is older than the given
+# duration. This method requires the LastResolved extension. To check if the bug
+# is closed for a month: `$self->is_closed_for({months => 1})`
+sub is_closed_for {
+  my ($self, $duration) = @_;
+
+  if ($self->isopened || !$self->cf_last_resolved) {
+    return 0;
+  }
+
+  my $past_time = DateTime->now()->subtract(%$duration)->epoch();
+  my $closed_time = str2time($self->cf_last_resolved);
+
+  return $past_time > $closed_time;
+}
+
 sub keywords {
   my ($self) = @_;
   return join(', ', (map { $_->name } @{$self->keyword_objects}));
@@ -4635,6 +4653,24 @@ sub to_hash {
   return $hash;
 }
 
+# True if the current user is being reminded of 
+# this bug on a specific date.
+sub is_reminded {
+  my ($self, $user) = @_;
+  return $self->{is_reminded} if exists $self->{is_reminded};
+
+  $user ||= Bugzilla->user;
+
+  require Bugzilla::Reminder;
+  my $reminders = Bugzilla::Reminder->match(
+    {bug_id => $self->id, user_id => $user->id, sent => 0});
+  if (@{$reminders}) {
+    return $self->{is_reminded} = 1;
+  }
+
+  return $self->{is_reminded} = 0;
+}
+
 #####################################################################
 # Subroutines
 #####################################################################
@@ -5132,6 +5168,21 @@ sub check_can_change_field {
     return {allowed => 1};
   }
 
+  # Allow anyone to enter/select the summary, component, bug type and platform
+  # when filing a new bug, because some are required fields
+  if (!$self->id) {
+    if (
+         $field eq 'short_desc'
+      || $field eq 'component'
+      || $field eq 'version'
+      || $field eq 'rep_platform'
+      || $field eq 'op_sys'
+      || ($field eq 'bug_type' && Bugzilla->params->{'require_bug_type'})
+    ) {
+      return {allowed => 1};
+    }
+  }
+
   my @priv_results;
   Bugzilla::Hook::process(
     'bug_check_can_change_field',
@@ -5201,8 +5252,11 @@ sub check_can_change_field {
   if (!$self->{'error'}) {
 
     # Allow the assignee to change anything else.
-    if ( $self->{'assigned_to'} == $user->id
-      || $self->{'_old_assigned_to'} && $self->{'_old_assigned_to'} == $user->id)
+    if (
+      (defined $self->{'assigned_to'} && $self->{'assigned_to'} == $user->id)
+      || (defined $self->{'_old_assigned_to'}
+        && $self->{'_old_assigned_to'} == $user->id)
+      )
     {
       return {allowed => 1};
     }
@@ -5283,7 +5337,9 @@ sub check_can_change_field {
   }
 
   # The reporter is allowed to change anything else.
-  if (!$self->{'error'} && $self->{'reporter_id'} == $user->id) {
+  if (!$self->{'error'}
+    && (defined $self->{'reporter_id'} && $self->{'reporter_id'} == $user->id))
+  {
     return {allowed => 1};
   }
 

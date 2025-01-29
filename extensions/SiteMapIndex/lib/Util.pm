@@ -34,7 +34,7 @@ our @EXPORT_OK = qw(
 );
 
 use Bugzilla;
-use Bugzilla::S3;
+use Bugzilla::Net::Google;
 use Bugzilla::Util qw(datetime_from url_quote);
 
 use Bugzilla::Extension::SiteMapIndex::Constants;
@@ -123,19 +123,19 @@ sub _generate_sitemap_index {
 <sitemapindex xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
 END
 
+  # We use urlbase instead of storage.googleapis.com since we have
+  # a rewrite rule in the nginx config to redirect for us. This is
+  # because the sitemap specification requires the sitemap hosts to
+  # be ones we own locally and not external sites.
   my $sitemap_url
-    = 'https://'
-    . Bugzilla->params->{sitemapindex_s3_bucket} . '.s3-'
-    . Bugzilla->params->{sitemapindex_aws_region}
-    . '.amazonaws.com';
-
-  use Bugzilla::Logging;
-  DEBUG($sitemap_url);
+    = Bugzilla->localconfig->urlbase
+    . 'sitemap/storage/v1/b/'
+    . Bugzilla->params->{sitemapindex_google_bucket} . '/o';
 
   foreach my $filename (@$filelist) {
     $index_xml .= "
   <sitemap>
-    <loc>$sitemap_url/$filename</loc>
+    <loc>$sitemap_url/$filename?alt=media</loc>
     <lastmod>$timestamp</lastmod>
   </sitemap>
 ";
@@ -145,8 +145,8 @@ END
 </sitemapindex>
 END
 
-  # Upload index file to s3
-  _upload_s3('sitemap_index.xml', $index_xml);
+  # Upload index file to net storage
+  _upload_net('sitemap_index.xml', $index_xml);
 
   return 1;
 }
@@ -186,27 +186,29 @@ END
 </urlset>
 END
 
-  # Write the compressed sitemap data to a variable and then upload to s3
+  # Write the compressed sitemap data to a variable and then upload to net storage
   my $gzipped_data;
   gzip \$sitemap_xml => \$gzipped_data || die "gzip failed: $GzipError\n";
 
   my $filename = "sitemap$filecount.xml.gz";
-  _upload_s3($filename, $gzipped_data);
+  _upload_net($filename, $gzipped_data);
 
   return $filename;
 }
 
-sub _upload_s3 {
+sub _upload_net {
   my ($filename, $data) = @_;
-  my $s3 = Bugzilla::S3->new({
-    aws_access_key_id     => Bugzilla->params->{sitemapindex_aws_client_id},
-    aws_secret_access_key => Bugzilla->params->{sitemapindex_aws_client_secret},
-    secure                => 1,
-    retry                 => 1,
+  my $driver = Bugzilla::Net::Google->new({
+    bucket          => Bugzilla->params->{sitemapindex_google_bucket},
+    host            => Bugzilla->params->{sitemapindex_google_host},
+    service_account => Bugzilla->params->{sitemapindex_google_service_account},
+    secure          => 1,
+    retry           => 1,
   });
-  my $bucket = $s3->bucket(Bugzilla->params->{sitemapindex_s3_bucket});
-  $bucket->delete_key($filename) || die $bucket->errstr;
-  $bucket->add_key($filename, $data) || die $bucket->errstr;
+  if ($driver->head_key($filename)) {
+    $driver->delete_key($filename) || die $driver->error_string;
+  }
+  $driver->add_key($filename, $data) || die $driver->error_string;
 }
 
 1;
