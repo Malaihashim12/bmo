@@ -127,7 +127,6 @@ sub FILESYSTEM {
   my $confdir        = bz_locations()->{'confdir'};
   my $attachdir      = bz_locations()->{'attachdir'};
   my $extensionsdir  = bz_locations()->{'extensionsdir'};
-  my $webdotdir      = bz_locations()->{'webdotdir'};
   my $templatedir    = bz_locations()->{'templatedir'};
   my $libdir         = bz_locations()->{'libpath'};
   my $extlib         = bz_locations()->{'ext_libpath'};
@@ -217,7 +216,6 @@ sub FILESYSTEM {
     # Writeable directories
     $template_cache => {files => CGI_READ,  dirs => DIR_CGI_OVERWRITE},
     $attachdir      => {files => CGI_WRITE, dirs => DIR_CGI_WRITE},
-    $webdotdir => {files => CGI_WRITE, dirs => DIR_CGI_WRITE},
     "$datadir/db" => {files => CGI_WRITE, dirs => DIR_CGI_WRITE},
     $logsdir => {files => CGI_WRITE, dirs => DIR_CGI_WRITE | DIR_ALSO_WS_STICKY},
     $assetsdir =>
@@ -280,7 +278,6 @@ sub FILESYSTEM {
     # Directories that cgi scripts can write to.
     "$datadir/db"   => DIR_CGI_WRITE,
     $attachdir      => DIR_CGI_WRITE,
-    $webdotdir      => DIR_CGI_WRITE,
     $assetsdir      => DIR_CGI_WRITE | DIR_ALSO_WS_SERVE,
     $template_cache => DIR_CGI_WRITE,
     $logsdir        => DIR_CGI_WRITE | DIR_ALSO_WS_STICKY,
@@ -290,37 +287,6 @@ sub FILESYSTEM {
     "$skinsdir/contrib" => DIR_WS_SERVE,
     $confdir            => DIR_CGI_READ,
   );
-
-  my $yui_all_css = sub {
-    return join(
-      "\n",
-      map {
-        my $css = path($_)->slurp;
-        _css_url_fix($css, $_, "skins/yui.css.list")
-      } split(/\n/, path("skins/yui.css.list")->slurp)
-    );
-  };
-
-  my $yui_all_js = sub {
-    return
-      join("\n",
-      map { path($_)->slurp } split(/\n/, path("js/yui.js.list")->slurp));
-  };
-
-  my $yui3_all_css = sub {
-    return join(
-      "\n",
-      map {
-        my $css = path($_)->slurp;
-        _css_url_fix($css, $_, "skins/yui3.css.list")
-      } split(/\n/, path("skins/yui3.css.list")->slurp)
-    );
-  };
-
-  my $yui3_all_js = sub {
-    return join("\n",
-      map { path($_)->slurp } split(/\n/, path('js/yui3.js.list')->slurp));
-  };
 
   # The name of each file, pointing at its default permissions and
   # default contents.
@@ -332,12 +298,6 @@ sub FILESYSTEM {
     # owned by itself, which can cause problems if jobqueue.pl
     # or something else is not running as the webserver or root.
     "$datadir/mailer.testfile" => {perms => CGI_WRITE, contents => ''},
-    "js/yui.js" => {perms => CGI_READ, overwrite => 1, contents => $yui_all_js},
-    "skins/yui.css" =>
-      {perms => CGI_READ, overwrite => 1, contents => $yui_all_css},
-    "js/yui3.js" => {perms => CGI_READ, overwrite => 1, contents => $yui3_all_js},
-    "skins/yui3.css" =>
-      {perms => CGI_READ, overwrite => 1, contents => $yui3_all_css},
   );
 
   Bugzilla::Hook::process(
@@ -429,28 +389,6 @@ sub update_filesystem {
 
   _remove_empty_css_files();
   _convert_single_file_skins();
-}
-
-sub _css_url_fix {
-  my ($content, $from, $to) = @_;
-  my $from_dir = dirname(File::Spec->rel2abs($from, bz_locations()->{libpath}));
-  my $to_dir   = dirname(File::Spec->rel2abs($to,   bz_locations()->{libpath}));
-
-  return css_url_rewrite(
-    $content,
-    sub {
-      my ($url) = @_;
-      if ($url =~ m{^(?:/|data:)}) {
-        return sprintf 'url(%s)', $url;
-      }
-      else {
-        my $new_url
-          = File::Spec->abs2rel(Cwd::realpath(File::Spec->rel2abs($url, $from_dir)),
-          $to_dir);
-        return sprintf "url(%s)", $new_url;
-      }
-    }
-  );
 }
 
 sub _remove_empty_css_files {

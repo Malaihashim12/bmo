@@ -79,6 +79,9 @@ whether to require users to login to browse bugs, the management
 of authentication cookies, and the regular expression used to
 validate email addresses. Some parameters are highlighted below.
 
+allow_account_creation
+    Allow new accounts to be created. If off, only administrators can create accounts.
+
 auth_env_id
     Environment variable used by external authentication system to store a unique identifier for each user. Leave it blank if there isn't one or if this method of authentication is not being used.
 
@@ -126,9 +129,6 @@ emailregexpdesc
 
 emailsuffix
     This is a string to append to any email addresses when actually sending mail to that address. It is useful if you have changed the :param:`emailregexp` param to only allow local usernames, but you want the mail to be delivered to username\@my.local.hostname.
-
-createemailregexp
-    This defines the (case-insensitive) regexp to use for email addresses that are permitted to self-register. The default (:paramval:`.*`) permits any account matching the emailregexp to be created. If this parameter is left blank, no users will be permitted to create their own accounts and all accounts will have to be created by an administrator.
 
 password_complexity
     Set the complexity required for passwords. In all cases must the passwords be at least 6 characters long.
@@ -288,42 +288,6 @@ collapsed_comment_tags
 
 last_change_time_non_bot_skip_list
     List of user accounts to skip when calculating last changed by a person timestamp.
-
-.. _param-dependency-graphs:
-
-Graphs
-======
-
-Bugzilla can draw graphs of bug-dependency relationships, using a tool called
-:file:`dot` (from the `GraphViz project <http://graphviz.org/>`_) or a web
-service called Web Dot. This page allows you to set the location of the binary
-or service. If no Web Dot server or binary is specified, then dependency
-graphs will be disabled.
-
-webdotbase
-    You may set this parameter to any of the following:
-
-    * A complete file path to :command:`dot` (part of GraphViz), which will
-      generate the graphs locally.
-    * A URL prefix pointing to an installation of the Web Dot package, which
-      will generate the graphs remotely.
-    * A blank value, which will disable dependency graphing.
-
-    The default value is blank. We recommend using a local install of
-    :file:`dot`. If you change this value to a web service, make certain that
-    the Web Dot server can read files from your Web Dot directory. On Apache
-    you do this by editing the :file:`.htaccess` file; for other systems the
-    needed measures may vary. You can run :command:`checksetup.pl` to
-    recreate the :file:`.htaccess` file if it has been lost.
-
-font_file
-    You can specify the full path to a TrueType font file which will be used
-    to display text (labels, legends, ...) in charts and graphical reports.
-    To support as many languages as possible, we recommend to specify a
-    TrueType font such as Unifont which supports all printable characters in
-    the Basic Multilingual Plane. If you leave this parameter empty, a default
-    font will be used, but its support is limited to English characters only
-    and so other characters will be displayed incorrectly.
 
 .. _param-group-security:
 

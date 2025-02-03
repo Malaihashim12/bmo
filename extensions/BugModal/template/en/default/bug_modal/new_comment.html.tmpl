@@ -9,7 +9,18 @@
 [%#
   # comment: comment object
   # bug: bug object
+  # id_prefix: (string) prefix for some element IDs (default: empty)
+  # add_extras: (boolean) whether to show extra controls (default: true)
   #%]
+
+[%
+  IF id_prefix.defined;
+    id_prefix = id_prefix _ '-';
+  END;
+  IF !add_extras.defined;
+    add_extras = 1;
+  END;
+%]
 
 <div id="add-comment">
   [% can_comment = bug.check_can_change_field('longdesc', 0, 1) %]
@@ -24,54 +35,22 @@
     [% RETURN %]
   [% END %]
 
-  [% IF user.is_insider %]
-    <div id="add-comment-private"
-      title="Make comment visible only to members of the '[% Param('insidergroup') FILTER html %]' group"
-    >
-      <input type="checkbox" name="comment_is_private" id="add-comment-private-cb"
-          value="1" comment_id="[% comment.count FILTER none %]">
-      <label for="add-comment-private-cb" aria-label="Mark as Private">Private</label>
-    </div>
-  [% END %]
+  <textarea id="comment" name="comment" rows="5" cols="80"
+      aria-label="[% mode == 'create' ? 'Description' : 'Add Comment' %]"
+      [%~ IF user.setting('ui_attach_long_paste') == 'on' +%] class="attach-long-paste"[% END %]
+  >[% comment FILTER html %]</textarea>
 
-  <ul id="comment-tabs" role="tablist">
-    <li id="comment-edit-tab" data-focus="comment" role="tab" tabindex="0" aria-controls="comment-edit-tabpanel" aria-selected="true">
-      Add Comment
-    </li>
-    [%~ ~%]
-    <li id="comment-preview-tab" role="tab" tabindex="-1" aria-controls="comment-preview-tabpanel" aria-selected="false">
-      Preview
-      <img id="preview-throbber" src="[% basepath FILTER none %]extensions/BugModal/web/throbber.gif" width="16" height="11" style="display:none">
-    </li>
-  </ul>
-
-  <div id="comment-edit-tabpanel" class="comment-tabpanel" role="tabpanel" aria-labelledby="comment-edit-tab">
-    <textarea rows="5" cols="80" name="comment" id="comment" aria-labelledby="comment-edit-tab"[% IF user.setting("ui_attach_long_paste") == "on" %] class="attach-long-paste"[% END %]></textarea>
-  </div>
-  <div id="comment-preview-tabpanel" class="comment-tabpanel" role="tabpanel" aria-labelledby="comment-preview-tab" style="display:none">
-    [% IF Param('use_markdown') %]
-      [% comment_tag = 'div' %]
-    [% ELSE %]
-      [% comment_tag = 'pre' %]
-    [% END %]
-    <[% comment_tag FILTER none %] id="comment-preview" class="comment-text markdown-body"></[% comment_tag FILTER none %]>
-  </div>
-
-  <div id="add-comment-tips">
-    [% IF Param('use_markdown') %]
-      <div id="comment-markdown-tip">
-        <img src="extensions/BMO/web/images/notice.png" width="16" height="16">
-        <a href="https://guides.github.com/features/mastering-markdown/" target="_blank">Markdown styling now supported</a>
+  <div id="after-comment-commit-button">
+    [% IF user.is_insider && add_extras %]
+      <div id="add-comment-private"
+        title="Make comment visible only to members of the '[% Param('insidergroup') FILTER html %]' group"
+      >
+        <input type="checkbox" name="comment_is_private" id="add-comment-private-cb"
+               value="1" comment_id="[% comment.count FILTER none %]">
+        <label for="add-comment-private-cb" aria-label="Mark as Private">Make comment private</label>
       </div>
     [% END %]
 
-    <div id="bugzilla-etiquette">
-      <a href="page.cgi?id=etiquette.html" target="_blank" tabindex="-1">
-        Comments Subject to Etiquette and Contributor Guidelines</a>
-    </div>
-  </div>
-
-  <div id="after-comment-commit-button">
     [% Hook.process("after_comment_commit_button", 'bug/edit.html.tmpl') %]
 
     [%# this checkboxes are in tables to match the alignment of the
@@ -94,32 +73,32 @@
         check_add_self = 0;
       END;
     %]
-    <table id="add-self-cc-container" [%= 'style="display:none"' IF hide_add_self %]>
-      <tr>
-        <td>
-          <input type="checkbox" name="addselfcc" id="add-self-cc"
-            [%= "disabled" IF hide_add_self %]
-            [%= "checked" IF check_add_self %]>
-        </td>
-        <td>
-          <label for="add-self-cc">Add me to CC list (follow this [% terms.bug %])</label>
-        </td>
-      </tr>
-    </table>
-
-    <table class="edit-show">
-      <tr>
-        <td>
-          <input type="checkbox" name="bug_ignored" id="bug-ignored"
-            [%= "checked" IF user.is_bug_ignored(bug.id) %]>
-          <input type="hidden" name="defined_bug_ignored" value="1">
-        </td>
-        <td>
-          <label for="bug-ignored" title="You will still receive emails for flag requests directed at you">
-            Never email me about this [% terms.bug %]
-          </label>
-        </td>
-      </tr>
-    </table>
+    [% IF bug.id && add_extras %]
+      <table id="add-self-cc-container" [%= 'style="display:none"' IF hide_add_self %]>
+        <tr>
+          <td>
+            <input type="checkbox" name="addselfcc" id="add-self-cc"
+                   [%= "disabled" IF hide_add_self %] [%= "checked" IF check_add_self %]>
+          </td>
+          <td>
+            <label for="add-self-cc">Add me to CC list (follow this [% terms.bug %])</label>
+          </td>
+        </tr>
+      </table>
+      <table class="edit-show">
+        <tr>
+          <td>
+            <input type="checkbox" name="bug_ignored" id="bug-ignored"
+                   [%= "checked" IF user.is_bug_ignored(bug.id) %]>
+            <input type="hidden" name="defined_bug_ignored" value="1">
+          </td>
+          <td>
+            <label for="bug-ignored" title="You will still receive emails for flag requests directed at you">
+              Never email me about this [% terms.bug %]
+            </label>
+          </td>
+        </tr>
+      </table>
+    [% END %]
   </div>
 </div>

@@ -45,8 +45,7 @@ our @EXPORT = qw(
 
 # Set approval flags on Phabricator revision bug attachments.
 sub set_attachment_approval_flags {
-  my ($attachment, $revision) = @_;
-  my $submitter = $revision->author->bugzilla_user;
+  my ($attachment, $revision, $flag_setter, $phab_user) = @_;
 
   my $revision_status_flag_map = {
     'abandoned'       => '-',
@@ -90,16 +89,23 @@ sub set_attachment_approval_flags {
     # Set the flag to it's new status. If it already has that status,
     # it will be a non-change. We also need to check to make sure the
     # flag change is allowed.
-    if ($submitter->can_change_flag($flag->type, $flag->status, $status)) {
-      INFO("Set existing `$approval_flag_name` flag to `$status`.");
-      push @old_flags, {id => $flag->id, status => $status};
-    }
-    else {
+    if (!$flag_setter->can_change_flag($flag->type, $flag->status, $status)) {
       INFO(
         "Unable to set existing `$approval_flag_name` flag to `$status` due to permissions."
       );
+      return;
     }
 
+    # If setting to + or - then user needs to be a release manager in Phab.
+    if (($status eq '+' || $status eq '-') && !$phab_user->is_release_manager) {
+      INFO(
+        "Unable to set existing `$approval_flag_name` flag to `$status` due to not being a release manager."
+      );
+      return;
+    }
+
+    INFO("Set existing `$approval_flag_name` flag to `$status`.");
+    push @old_flags, {id => $flag->id, status => $status};
     last;
   }
 
@@ -108,10 +114,10 @@ sub set_attachment_approval_flags {
   if (!@old_flags && $status ne 'X') {
     my $approval_flag = Bugzilla::FlagType->new({name => $approval_flag_name});
     if ($approval_flag) {
-      if ($submitter->can_change_flag($approval_flag, 'X', $status)) {
+      if ($flag_setter->can_change_flag($approval_flag, 'X', $status)) {
         INFO("Creating new `$approval_flag_name` flag with status `$status`");
         push @new_flags,
-          {setter => $submitter, status => $status, type_id => $approval_flag->id,};
+          {setter => $flag_setter, status => $status, type_id => $approval_flag->id,};
       }
       else {
         INFO(
@@ -246,8 +252,8 @@ sub get_attachment_revisions {
 }
 
 sub request {
-  state $check = compile(Str, HashRef);
-  my ($method, $data) = $check->(@_);
+  state $check = compile(Str, HashRef, Optional[Bool]);
+  my ($method, $data, $no_die) = $check->(@_);
   my $request_cache = Bugzilla->request_cache;
   my $params        = Bugzilla->params;
   my $ua            = $request_cache->{phabricator_ua} ||= mojo_user_agent();
@@ -269,9 +275,11 @@ sub request {
   my $result = $response->json;
   ThrowCodeError('phabricator_api_error', {reason => 'JSON decode failure'})
     if !defined($result);
-  ThrowCodeError('phabricator_api_error',
-    {code => $result->{error_code}, reason => $result->{error_info}})
-    if $result->{error_code};
+
+  if ($result->{error_code} && !$no_die) {
+    ThrowCodeError('phabricator_api_error',
+      {code => $result->{error_code}, reason => $result->{error_info}});
+  }
 
   return $result;
 }

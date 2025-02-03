@@ -43,7 +43,7 @@ logout($sel);
 # * The other uses an API key header to authenticate
 log_in($sel, $config, 'editbugs');
 $sel->click_ok('header-account-menu-button');
-$sel->click_ok('link=Preferences');
+$sel->click_ok("//a[./span[contains(text(), 'Preferences')]]");
 $sel->wait_for_page_to_load_ok(WAIT_TIME);
 $sel->title_is('User Preferences', 'User preferences');
 $sel->click_ok('link=Webhooks');
@@ -61,7 +61,7 @@ ok(
 );
 
 $sel->type_ok('name', 'Webhook (no auth)');
-$sel->type_ok('url',  'http://externalapi.test:8000/webhooks/test/noauth');
+$sel->type_ok('url',  'http://externalapi.test:8001/webhooks/test/noauth');
 $sel->check_ok('change_event');
 $sel->check_ok('comment_event');
 $sel->select_ok('product', 'value=Firefox');
@@ -70,7 +70,7 @@ $sel->click_ok('add_webhook');
 $sel->is_text_present_ok('Webhook (no auth)');
 $sel->is_text_present_ok('change,comment');
 $sel->type_ok('name', 'Webhook (with auth)');
-$sel->type_ok('url',  'http://externalapi.test:8000/webhooks/test/withauth');
+$sel->type_ok('url',  'http://externalapi.test:8001/webhooks/test/withauth');
 $sel->check_ok('create_event');
 $sel->check_ok('attachment_event');
 $sel->select_ok('product', 'value=Firefox');
@@ -87,12 +87,12 @@ logout($sel);
 # Login as admin user and a webhook using Any product
 log_in($sel, $config, 'admin');
 $sel->click_ok('header-account-menu-button');
-$sel->click_ok('link=Preferences');
+$sel->click_ok("//a[./span[contains(text(), 'Preferences')]]");
 $sel->wait_for_page_to_load_ok(WAIT_TIME);
 $sel->title_is('User Preferences', 'User preferences');
 $sel->click_ok('link=Webhooks');
 $sel->type_ok('name', 'Webhook Any Product');
-$sel->type_ok('url',  'http://externalapi.test:8000/webhooks/test/noauth');
+$sel->type_ok('url',  'http://externalapi.test:8001/webhooks/test/noauth');
 $sel->check_ok('create_event');
 $sel->check_ok('attachment_event');
 $sel->select_ok('product', 'value=Any');
@@ -134,7 +134,7 @@ ok(!$sel->is_text_present('ERROR'), 'ERROR message not present');
 
 # Remove the admin webhook for any product
 $sel->click_ok('header-account-menu-button');
-$sel->click_ok('link=Preferences');
+$sel->click_ok("//a[./span[contains(text(), 'Preferences')]]");
 $sel->wait_for_page_to_load_ok(WAIT_TIME);
 $sel->title_is('User Preferences', 'User preferences');
 $sel->click_ok('link=Webhooks');

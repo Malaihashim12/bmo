@@ -1,4 +1,4 @@
-FROM perl:5.36.1-slim AS builder
+FROM perl:5.40.0-slim AS builder
 
 RUN apt-get update \
     && apt-get upgrade -y \
@@ -6,7 +6,6 @@ RUN apt-get update \
     apt-file \
     build-essential \
     cmake \
-    curl \
     default-libmysqlclient-dev \
     git \
     libcairo-dev \
@@ -34,17 +33,17 @@ RUN apt-file update \
     | xargs -IFILE apt-file search -l FILE \
     | sort -u > PACKAGES
 
-FROM perl:5.36.0-slim
+FROM perl:5.40.0-slim
 
 ENV DEBIAN_FRONTEND noninteractive
 
 COPY --from=builder /app/local /app/local
 COPY --from=builder /app/PACKAGES /app/PACKAGES
 
+RUN cat /app/PACKAGES
 RUN apt-get update \
     && apt-get upgrade -y \
     && apt-get install -y \
-       curl \
        git \
        graphviz \
        libcap2-bin \

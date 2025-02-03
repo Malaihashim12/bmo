@@ -234,7 +234,6 @@ sub _handle_login_result {
   # to find account names by brute force)
   elsif ($fail_code == AUTH_LOGINFAILED or $fail_code == AUTH_NO_SUCH_USER) {
     my $remaining_attempts = MAX_LOGIN_ATTEMPTS - ($result->{failure_count} || 0);
-    Bugzilla->iprepd_report('bmo.username_password_mismatch', remote_ip());
     ThrowUserError("invalid_username_or_password",
       {remaining => $remaining_attempts});
   }
@@ -490,7 +489,7 @@ Returns:     C<true> if users can log themselves out, C<false> otherwise.
 
 Description: Tells you whether or not users are allowed to manually create
              their own accounts, based on the current login system in use.
-             Note that this doesn't check the C<createemailregexp>
+             Note that this doesn't check the C<allow_account_creation>
              parameter--you have to do that by yourself in your code.
 Params:      None
 Returns:     C<true> if users are allowed to create new Bugzilla accounts,

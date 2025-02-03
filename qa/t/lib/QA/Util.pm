@@ -128,13 +128,17 @@ sub get_config {
 sub get_selenium {
   my $chrome_mode = shift;
   my $config      = get_config();
-
+ 
   my $sel = Bugzilla::Test::Selenium->new({
     driver_args => {
-      base_url   => $ENV{BZ_BASE_URL} || $config->{browser_url},
-      browser    => 'firefox',
-      version    => '',
-      javascript => 1
+      browser_name => 'firefox',
+      base_url     => $ENV{BZ_BASE_URL} || $config->{browser_url},
+      javascript   => 1,
+      extra_capabilities => {
+        'moz:firefoxOptions' => {
+          'args' => ['-headless'],
+        }
+      }
     }
   });
 
@@ -228,12 +232,17 @@ sub file_bug_in_product {
   my ($sel, $product, $classification) = @_;
   my $config = get_config();
 
+  # Set a local storage item that controls the visibility of UI elements
+  $sel->driver->execute_script('localStorage.setItem("TUI", "{\"expert_fields\":1,\"history_query\"'
+    . ':1,\"people_query\":1,\"information_query\":1,\"custom_search_query\":1}");');
+  # Set a legacy cookie as well for backward compatibility
   $sel->add_cookie('TUI',
     'expert_fields=1&history_query=1&people_query=1&information_query=1&custom_search_query=1'
   );
+  sleep(1);
 
   $classification ||= "Unclassified";
-  $sel->click_ok('//*[@class="link-file"]//a', undef, "Go create a new bug");
+  $sel->click_ok("//a[./span[contains(text(), 'New Bug')]]", undef, "Go create a new bug");
   $sel->wait_for_page_to_load(WAIT_TIME);
 
   # Use normal bug form instead of helper
@@ -320,6 +329,10 @@ sub go_to_bug {
   $sel->click_ok('mode-btn-readonly', 'Click Edit Bug') if !$no_edit;
   $sel->click_ok('action-menu-btn', 'Expand action menu');
   $sel->click_ok('action-expand-all', 'Expand all modal panels');
+
+  # Remove the blue New Changes link because the sticky banner causes a click interception issue in
+  # Selenium that cannot be reproduced in real browser environments
+  $sel->driver->execute_script('document.querySelector(\'.new-changes-link\')?.remove();');
 }
 
 # Go to admin.cgi.
@@ -382,17 +395,17 @@ sub add_product {
 sub open_advanced_search_page {
   my $sel = shift;
 
+  # Set a local storage item that controls the visibility of UI elements
+  $sel->driver->execute_script('localStorage.setItem("TUI", "{\"expert_fields\":1,\"history_query\"'
+    . ':1,\"people_query\":1,\"information_query\":1,\"custom_search_query\":1}");');
+  # Set a legacy cookie as well for backward compatibility
   $sel->add_cookie('TUI',
     'expert_fields=1&history_query=1&people_query=1&information_query=1&custom_search_query=1'
   );
-  $sel->click_ok('//*[@class="link-search"]//a');
+  sleep(1);
+
+  $sel->click_ok("//a[./span[contains(text(), 'Advanced Search')]]");
   $sel->wait_for_page_to_load(WAIT_TIME);
-  my $title = $sel->get_title();
-  if ($title eq "Simple Search") {
-    ok(1, "Display the simple search form");
-    $sel->click_ok("link=Advanced Search");
-    $sel->wait_for_page_to_load(WAIT_TIME);
-  }
   $sel->remove_all_selections('classification');
   sleep(1); # FIXME: Delay for slow page performance
 }

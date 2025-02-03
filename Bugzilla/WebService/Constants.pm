@@ -114,6 +114,12 @@ use constant WS_ERROR_CODE => {
   comment_too_long          => 114,
   comment_invalid_isprivate => 117,
 
+  # Comment reactions
+  comment_reaction_disabled   => 136,
+  comment_reaction_invalid    => 137,
+  comment_reaction_closed     => 138,
+  comment_reaction_restricted => 139,
+
   # Comment tagging
   comment_tag_disabled  => 125,
   comment_tag_invalid   => 126,
@@ -178,7 +184,6 @@ use constant WS_ERROR_CODE => {
 
   # User errors are 500-600.
   account_exists              => 500,
-  iam_username_exists         => 500,
   illegal_email_address       => 501,
   auth_cant_create_account    => 501,
   account_creation_disabled   => 501,
@@ -187,7 +192,6 @@ use constant WS_ERROR_CODE => {
 
   # Error 503 password_too_long no longer exists.
   invalid_username     => 504,
-  iam_illegal_username => 504,
 
   # This is from strict_isolation, but it also basically means
   # "invalid user."

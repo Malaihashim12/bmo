@@ -20,7 +20,7 @@ $answer{'password_complexity'}  = 'bmo';
 $answer{'size_limit'}           = 750000;
 $answer{'skin'}                 = 'Mozilla';
 $answer{'upgrade_notification'} = 'disabled';
-$answer{'urlbase'}              = 'http://bmo.test/';
+$answer{'urlbase'}              = 'http://localhost:8000/';
 $answer{'usebugaliases'}        = 1;
 $answer{'useclassification'}    = 1;
 $answer{'user_info_class'}      = 'GitHubAuth,CGI';
@@ -28,20 +28,44 @@ $answer{'user_verify_class'}    = 'GitHubAuth,DB';
 $answer{'usestatuswhiteboard'}  = 1;
 $answer{'usetargetmilestone'}   = 1;
 $answer{'utf8'}                 = 'utf8mb4';
-$answer{'webdotbase'}           = '/usr/bin/dot';
 
-$answer{'mozilla_iam_enabled'}                  = 1;
-$answer{'mozilla_iam_person_api_uri'}           = 'http://externalapi.test:8000/person/test';
-$answer{'mozilla_iam_person_api_client_id'}     = 'client_id';
-$answer{'mozilla_iam_person_api_client_secret'} = 'client_secret';
-$answer{'mozilla_iam_mandatory_domains'}        = 'mozilla.com';
-
-$answer{'oauth2_client_authorize_url'} = 'http://externalapi.test:8000/oauth/test/authorize';
+$answer{'oauth2_client_authorize_url'} = 'http://externalapi.test:8001/oauth/test/authorize';
 $answer{'oauth2_client_enabled'}       = 1;
 $answer{'oauth2_client_id'}            = 'client_id';
 $answer{'oauth2_client_scopes'}        = 'openid profile email';
 $answer{'oauth2_client_secret'}        = 'client_secret';
-$answer{'oauth2_client_token_url'}     = 'http://externalapi.test:8000/oauth/test/token';
-$answer{'oauth2_client_userinfo_url'}  = 'http://externalapi.test:8000/oauth/test/userinfo';
+$answer{'oauth2_client_token_url'}     = 'http://externalapi.test:8001/oauth/test/token';
+$answer{'oauth2_client_userinfo_url'}  = 'http://externalapi.test:8001/oauth/test/userinfo';
 
-$answer{'product_details_endpoint'} = 'http://externalapi.test:8000/product_details';
+$answer{'product_details_endpoint'} = 'http://externalapi.test:8001/product_details';
+
+$answer{'s3_bucket'}             = 'attachments';
+$answer{'aws_host'}              = 's3';
+$answer{'aws_access_key_id'}     = 'AKIAIOSFODNN7EXAMPLE';
+$answer{'aws_secret_access_key'} = 'wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY';
+$answer{'attachment_s3_minsize'} = '10';
+
+$answer{'google_storage_host'}            = 'gcs';
+$answer{'google_storage_bucket'}          = 'attachments';
+$answer{'google_storage_service_account'} = 'test';
+$answer{'attachment_google_minsize'}      = '10';
+
+$answer{'mining_enabled'}                 = 1;
+$answer{'mining_google_host'}            = 'gcs';
+$answer{'mining_google_bucket'}          = 'mining';
+$answer{'mining_google_service_account'} = 'test';
+
+$answer{'sitemapindex_enabled'}                = 1;
+$answer{'sitemapindex_google_host'}            = 'gcs';
+$answer{'sitemapindex_google_bucket'}          = 'sitemapindex';
+$answer{'sitemapindex_google_service_account'} = 'test';
+
+$answer{'bmo_etl_enabled'}         = 1;
+$answer{'bmo_etl_base_url'}        = 'http://bq:9050';
+$answer{'bmo_etl_service_account'} = 'test';
+$answer{'bmo_etl_project_id'}      = 'test';
+$answer{'bmo_etl_dataset_id'}      = 'bugzilla';
+
+$answer{'duo_uri'} = 'http://localhost:8001';
+$answer{'duo_client_id'} = '6rZ3KnrL04uyGjLd8foO';
+$answer{'duo_client_secret'} = '3vg6cm0Gj0DpC6ZJACXdZ1NrVRi1AhkwjfXnlFaJ';

@@ -15,6 +15,11 @@
   </form>
 [% END %]
 
+[%# Do not show Duo options unless required or user is a Mozilla employee %]
+[% IF Param("duo_uri") && (user.in_duo_required_group || user.in_group('mozilla-employee-confidential')) %]
+  [% duo_allowed = 1 %]
+[% END %]
+
 [% IF NOT Bugzilla.feature('mfa') %]
   <input type="hidden" name="mfa_action" id="mfa-action" value="">
   <p>
@@ -51,6 +56,17 @@
     </iframe>
 
   [% ELSIF user.mfa %]
+    [% IF user.mfa != 'Duo' && user.in_duo_required_group %]
+      <p class="mfa-warning-msg">
+        You are in a group requiring Duo Security for two-factor authentication. You must
+        first disabled your current two-factor authentication and then select Duo Security
+        before continuing to use [% terms.Bugzilla %].
+      </p>
+      <p>
+        <b>Need help setting up 2FA?</b>
+        You may want to <a href="[% MFA_HOWTO FILTER html %]">read these comprehensive instructions</a>.
+      </p>
+    [% END %]
     <p>
       Two-factor authentication is currently <b>enabled</b> using
       <b>[% SWITCH user.mfa %]
@@ -60,23 +76,23 @@
     </p>
     <input type="hidden" name="mfa_action" id="mfa-action" value="disable">
 
-    [% IF user.iam_username %]
-      <p class="mfa-disable-blurb">
-        Since your account uses Mozilla IAM for authentication, you are currently
-        not able to disable Two-Factor Authentication.
-      </p>
-    [% ELSE %]
-      <div class="mfa-buttons">
+    <div class="mfa-buttons">
+      [% IF user.mfa == 'Duo' && user.in_duo_required_group %]
+        <p class="mfa-warning-msg">
+          You are in a group requiring Duo Security for two-factor authentication and 
+          therefore it cannot be disabled. Talk to an admin on Slack (#bmo) if you need assistance.
+        </p>
+      [% ELSIF user.mfa != 'Duo' || (user.mfa == 'Duo' && !user.in_duo_required_group) %]
         <div>
           <button type="button" id="mfa-disable">Disable Two-factor Authentication</button>
           [% INCLUDE "mfa/protected.html.tmpl" %]
         </div>
-        <div>
-          <button type="button" id="mfa-recovery">Generate Printable Recovery Codes</button>
-          [% INCLUDE "mfa/protected.html.tmpl" %]
-        </div>
+      [% END %]
+      <div>
+        <button type="button" id="mfa-recovery">Generate Printable Recovery Codes</button>
+        [% INCLUDE "mfa/protected.html.tmpl" %]
       </div>
-    [% END %]
+    </div>
 
     <p class="mfa-api-blurb">
       [% IF user.settings.api_key_only.value == 'on' %]
@@ -95,14 +111,12 @@
       [% END %]
     </p>
 
-    [% IF user.mfa && !user.iam_username %]
-      <p class="mfa-disable-blurb">
-        You will need to disable your two-factor authentication in order to change to a different method.
-        There will be a small amount of time when your account will not be as secure, so you may use the
-        <a href="[% basepath FILTER none %]userprefs.cgi?tab=sessions">sessions</a> page to log out all other sessions other
-        than the current one after setting up the new method.
-      </p>
-    [% END %]
+    <p class="mfa-disable-blurb">
+      You will need to disable your two-factor authentication in order to change to a different method.
+      There will be a small amount of time when your account will not be as secure, so you may use the
+      <a href="[% basepath FILTER none %]userprefs.cgi?tab=sessions">sessions</a> page to log out all other sessions other
+      than the current one after setting up the new method.
+    </p>
 
     <div id="mfa-recovery-container" style="display:none">
       <p>
@@ -171,22 +185,30 @@
     <input type="hidden" name="mfa" id="mfa">
 
     <div id="mfa-select" class="mfa-buttons">
-      <p>
-        Select the two-factor system you want to use:
-      </p>
+      [% IF !user.in_duo_required_group %]
+        <p>
+          Select the two-factor system you want to use:
+        </p>
 
-      <button type="button" id="mfa-select-totp">Time-based One-Time Password (TOTP)</button><br>
-      <blockquote>
-        Requires a smartphone and a TOTP app (such as
-        <a href="https://support.google.com/accounts/answer/1066447" target="_blank" rel="noopener noreferrer">Google Authenticator</a>
-        or <a href="https://freeotp.github.io/" target="_blank" rel="noopener noreferrer">Red Hat FreeOTP</a>),
-      </blockquote>
+        <button type="button" id="mfa-select-totp">Time-based One-Time Password (TOTP)</button><br>
+        <blockquote>
+          Requires a smartphone and a TOTP app (such as
+          <a href="https://support.google.com/accounts/answer/1066447" target="_blank" rel="noopener noreferrer">Google Authenticator</a>
+          or <a href="https://freeotp.github.io/" target="_blank" rel="noopener noreferrer">Red Hat FreeOTP</a>),
+        </blockquote>
+      [% ELSE %]
+        <p>You are a member of a group that requires Duo Security to be used for your MFA</p>
+      [% END %]
 
-      [% IF Param("duo_host")  %]
+       [% IF duo_allowed %]
         <button type="button" id="mfa-select-duo">Duo Security</button><br>
         <blockquote>
-          Requires a <a href="https://mana.mozilla.org/wiki/display/SD/DuoSecurity" target="_blank" rel="noopener noreferrer">Duo Security</a>
-          account (recommended for Mozilla employees).
+          <p>Requires a <a href="https://mozilla-hub.atlassian.net/wiki/spaces/SD/pages/26739600/DuoSecurity+Overviewi" 
+                           target="_blank" rel="noopener noreferrer">Duo Security</a>
+          account (required for Mozilla employees).</p>
+          <p>If this account is for automation and Duo 2FA is not appropriate, Please
+          <a href="[% basepath FILTER none %]enter_bug.cgi?product=bugzilla.mozilla.org&component=Administration">
+            file a [% terms.bug %]</a> with details of your bot and requirements.</p>
         </blockquote>
       [% END %]
     </div>
@@ -246,7 +268,7 @@
 
     </div>
 
-    [% IF Param("duo_host") %]
+    [% IF duo_allowed %]
       [%# enable - duo %]
       <div id="mfa-enable-duo" style="display:none">
 
@@ -259,7 +281,8 @@
           <img src="[% basepath FILTER none %]images/duo.png" id="duo-logo" width="32" height="32">
           Verification with Duo Security will be performed before your account is updated.<br>
 
-          You must be <a href="https://mana.mozilla.org/wiki/display/SD/DuoSecurity" target="_blank" rel="noopener noreferrer">
+          You must be <a href="https://mozilla-hub.atlassian.net/wiki/spaces/SD/pages/26739600/DuoSecurity+Overview" 
+                         target="_blank" rel="noopener noreferrer">
           enrolled with Duo Security via login.mozilla.com</a> before you can use Duo 2FA.
         </p>
 

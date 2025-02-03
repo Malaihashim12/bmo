@@ -93,7 +93,6 @@ my %set_params = (
   defaultseverity            => '--',          # BMO CHANGE
   timetrackinggroup          => 'editbugs',    # BMO CHANGE
   letsubmitterchoosepriority => 1,             # BMO CHANGE
-  createemailregexp          => '.*',          # BMO CHANGE
 );
 
 my $params_modified;
@@ -691,6 +690,13 @@ eval {
 eval {
   $sth->execute($created_group->id, $no_search->id, 0, CONTROLMAPMANDATORY,
     CONTROLMAPMANDATORY, 0);
+};
+
+# Add QA-Selenium-TEST group also to Another Product
+my $another_product = Bugzilla::Product->new({name => 'Another Product'});
+eval {
+  $sth->execute($created_group->id, $another_product->id, 0, CONTROLMAPSHOWN,
+    CONTROLMAPNA, 0);
 };
 
 ##########################################################################
